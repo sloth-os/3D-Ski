@@ -26,6 +26,7 @@ export const nextCamera = (current: CameraMode) =>
   cameras[(cameras.findIndex((c) => c.id === current) + 1) % cameras.length].id
 
 import type { Point3, Lens } from './analysis.ts'
+import { bodyHeading, shoulderLook } from './air.ts'
 import { clamp, radians, type Frame } from './physics.ts'
 import type { Course } from './course.ts'
 export type ViewOptions = {
@@ -59,6 +60,7 @@ export function cameraShot(f: Frame, c: Course, opt: ViewOptions): CameraShot {
   const pitch = (f.pitch || c.pitch) * radians,
     heading = f.heading,
     quiet = opt.reduced ? 0 : 1
+  const lift = f.air.height
   const phase = f.d * 0.54
   const bob =
     0.024 *
@@ -83,17 +85,18 @@ export function cameraShot(f: Frame, c: Course, opt: ViewOptions): CameraShot {
       }
       break
     case 'first': {
+      const look = heading + quiet * (bodyHeading(f) - shoulderLook(f))
       const eye: Point3 = [
         Math.sin(f.lean) * 0.36,
-        1.56 - f.flex * 0.24 - f.tuck * 0.17 + bob,
+        lift + 1.56 - f.flex * 0.24 - f.tuck * 0.17 + bob,
         -0.03,
       ]
       return {
         eye,
         target: [
-          eye[0] + Math.sin(heading) * 11,
-          eye[1] - 1.1 - 11 * Math.sin(pitch),
-          eye[2] - Math.cos(heading) * 11,
+          eye[0] + Math.sin(look) * 11,
+          eye[1] - 1.1 - 11 * Math.tan(pitch) * Math.cos(look),
+          eye[2] - Math.cos(look) * 11,
         ],
         fov: 71 + Math.min(3, f.speed * 0.13) * quiet,
       }
@@ -133,11 +136,19 @@ export function cameraShot(f: Frame, c: Course, opt: ViewOptions): CameraShot {
       x,
       Math.max(
         0.21,
-        height * zoom + z * Math.tan(pitch) + opt.tilt * dist + bob,
+        height * zoom +
+          z * Math.tan(pitch) +
+          opt.tilt * dist +
+          bob +
+          lift * 0.62,
       ),
       z,
     ],
-    target: [Math.sin(heading) * 0.26, targetY + bob * 0.13, targetZ],
+    target: [
+      Math.sin(heading) * 0.26,
+      targetY + bob * 0.13 + lift * 0.79,
+      targetZ,
+    ],
     fov,
   }
 }

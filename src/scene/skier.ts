@@ -1,4 +1,5 @@
 import * as THREE from 'three'
+import { shoulderLook } from '../air.ts'
 import { equipmentFor, type Setup } from '../course.ts'
 import { clamp, radians, type Frame } from '../physics.ts'
 import { type RiderPose, type Point3 } from '../analysis.ts'
@@ -296,10 +297,10 @@ export function skierModel(setup: Setup) {
       yaw,
       -p.lean * 0.36,
     )
-    hips.rotation.set(0, yaw, -p.lean * 0.13)
+    hips.rotation.set(0, p.hipYaw, -p.lean * 0.13)
     head.rotation.set(
       0.085 + 0.18 * f.tuck,
-      board ? 0.7 : -f.heading * 0.25,
+      board ? 0.7 : shoulderLook(f) - f.heading * 0.25,
       p.lean * 0.13,
     )
     const edge = f.edge * radians
@@ -313,14 +314,13 @@ export function skierModel(setup: Setup) {
       const side = l.side,
         leg = p.legs[i]
       if (!board) {
-        l.platform.position.set(
-          side * (0.196 + 0.065 * f.brake),
-          0.031 + 0.064 * Math.abs(Math.sin(edge)),
-          leg.ankle[2],
+        l.platform.position.fromArray(leg.deck.origin)
+        l.platform.rotation.set(
+          leg.deck.pitch,
+          leg.deck.yaw,
+          leg.deck.roll,
+          'YXZ',
         )
-        l.platform.rotation.z = -edge
-        l.platform.rotation.y =
-          side * ((setup.technique === 'wedge' ? 0.18 : 0.008) + f.brake * 0.33)
       }
       l.shin(leg.ankle, leg.knee)
       l.thigh(leg.knee, leg.hip)
@@ -340,6 +340,25 @@ export function skierModel(setup: Setup) {
         0.112 + 0.13 * f.tuck + side * p.lean * 0.084 - 0.043 * plant,
         board ? -0.126 + swing : -0.258 - 0.135 * plant + swing,
       ]
+      if (p.grab?.hand === side) {
+        const target = upper.worldToLocal(
+          handPoint.fromArray(p.grab.point).applyMatrix4(root.matrixWorld),
+        )
+        const weight = p.grab.weight
+        for (let axis = 0; axis < 3; axis++)
+          hand[axis] += (target.getComponent(axis) - hand[axis]) * weight
+        const high: Point3 = [side * 0.218, 0.423, -0.03]
+        for (let axis = 0; axis < 3; axis++)
+          elbow[axis] +=
+            ((high[axis] + hand[axis]) * 0.5 +
+              (axis === 0 ? side * 0.095 : axis === 2 ? -0.085 : 0) -
+              elbow[axis]) *
+            weight
+      }
+      if (p.shifty) {
+        hand[0] += p.shifty * 0.11
+        hand[2] += side * p.shifty * 0.16
+      }
       l.bicep([side * 0.218, 0.423, -0.03], elbow)
       l.forearm(elbow, hand)
       l.elbow.position.fromArray(elbow)
@@ -355,6 +374,10 @@ export function skierModel(setup: Setup) {
           0.055 + 0.09 * (1 - plant) + 0.028 * Math.sin(f.t * 2.05 + side),
           h[2] + 0.57 - 0.72 * plant,
         ]
+        if (f.air.phase === 'flight') {
+          tip[1] = h[1] - 0.44
+          tip[2] = h[2] + 0.78
+        }
         l.pole(h, tip)
         l.basket.position.set(tip[0], tip[1] + 0.048, tip[2] - 0.022)
       }

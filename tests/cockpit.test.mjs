@@ -4,8 +4,8 @@ import { chromium } from 'playwright-core'
 import { preview } from 'vite'
 
 test(
-  'the native 3D cameras, snowboard study, force inspector, and frame stepping work together',
-  { timeout: 120000 },
+  'the native cameras, snowboard study, freestyle replay, keyboard landing, and frame inspector work together',
+  { timeout: 180000 },
   async (t) => {
     const host = await preview({
       configFile: false,
@@ -100,6 +100,85 @@ test(
       ),
       [],
     )
+    await page.getByRole('link', { name: 'Technique lab' }).click()
+    await page
+      .getByRole('group', { name: 'Lesson collection' })
+      .getByRole('button', { name: 'Ski tricks' })
+      .click()
+    await page.getByRole('button', { name: 'Mute grab', exact: true }).click()
+    assert.equal(new URL(page.url()).hash, '#ski-tricks/muteGrab')
+    await page.locator('.study-surface canvas[data-renderer="webgl"]').waitFor()
+    await page
+      .locator('.study-grip')
+      .filter({ hasText: 'Left glove · right ski' })
+      .waitFor()
+    const normalLoad = page
+      .locator('.trick-study .experiment-stats > div')
+      .last()
+      .locator('b')
+    assert.equal(await normalLoad.textContent(), '0 N')
+    await page.getByRole('button', { name: 'Landing', exact: true }).click()
+    assert.ok(parseFloat(await normalLoad.textContent()) > 750)
+    await page.getByRole('button', { name: 'Rewind to approach' }).click()
+    await page.getByRole('button', { name: 'Play trick', exact: true }).click()
+    const slider = page.getByLabel('Replay position')
+    await page.waitForFunction(
+      () => +document.querySelector('.replay-slider input').value > 6,
+    )
+    await page.getByRole('button', { name: 'Pause replay' }).click()
+    const paused = +(await slider.inputValue())
+    await page.getByRole('button', { name: 'Play trick', exact: true }).click()
+    await page.waitForFunction(
+      (value) => +document.querySelector('.replay-slider input').value > value,
+      paused,
+    )
+    await slider.fill('15')
+    assert.equal(await page.locator('.replay-phase').textContent(), 'Takeoff')
+    await page.getByRole('button', { name: '180', exact: true }).click()
+    await page.getByRole('button', { name: 'Practice this trick' }).click()
+    await page
+      .getByRole('combobox', { name: 'Playback speed' })
+      .selectOption('1')
+    await page.getByRole('main').focus()
+    const charged = () =>
+      page.waitForFunction(
+        () =>
+          +document
+            .querySelector('.jump-meter')
+            .getAttribute('aria-valuenow') >= 99,
+      )
+    await page.keyboard.down('j')
+    await charged()
+    await page.keyboard.press('p')
+    assert.equal(
+      await page.locator('.trick-hud').getAttribute('data-phase'),
+      'load',
+    )
+    await page.keyboard.up('j')
+    await page.keyboard.press('p')
+    await page.locator('.trick-hud[data-phase="ready"]').waitFor()
+    await page.keyboard.down('j')
+    await charged()
+    await page.keyboard.down('ArrowRight')
+    await page.keyboard.up('j')
+    await page.locator('.trick-hud[data-phase="flight"]').waitFor()
+    await page.keyboard.up('ArrowRight')
+    await page.locator('.trick-hud[data-stance="switch"]').waitFor()
+    assert.match(
+      await page.locator('.trick-hud .hud-kicker').innerText(),
+      /clean landing \+190/i,
+    )
+    await page.getByRole('button', { name: 'End run', exact: true }).click()
+    await page.waitForFunction(
+      () =>
+        JSON.parse(localStorage.getItem('fallline.runs') || '[]').length === 1,
+    )
+    const saved = await page.evaluate(
+      () => JSON.parse(localStorage.getItem('fallline.runs'))[0],
+    )
+    assert.equal(saved.freestyle.attempts, 1)
+    assert.equal(saved.freestyle.landed, 1)
+    assert.equal(saved.freestyle.points, 190)
     assert.deepEqual(errors, [])
   },
 )

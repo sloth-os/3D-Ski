@@ -92,6 +92,18 @@ export function makeLens(scene: THREE.Scene) {
   const links = Array.from({ length: 6 }, () =>
     rod(body, lensColors.body, 0.009),
   )
+  const grip = new THREE.Mesh(
+    sphere,
+    new THREE.MeshBasicMaterial({
+      color: lensColors.support,
+      wireframe: true,
+      depthTest: false,
+      depthWrite: false,
+    }),
+  )
+  grip.scale.setScalar(2.9)
+  grip.renderOrder = 16
+  body.add(grip)
   const normalArrows = [
       arrow(contact, lensColors.support),
       arrow(contact, lensColors.drag),
@@ -130,7 +142,7 @@ export function makeLens(scene: THREE.Scene) {
     ) {
       forces.visible = enabled && lens === 'forces'
       body.visible = enabled && lens === 'body'
-      contact.visible = enabled && lens === 'contact'
+      contact.visible = enabled && lens === 'contact' && a.normalN > 0
       const point = (out: THREE.Vector3, v: Point3) =>
         out.fromArray(v).applyMatrix4(root.matrixWorld)
       const com = point(joints[6], p.com)
@@ -148,7 +160,8 @@ export function makeLens(scene: THREE.Scene) {
             p.legs[1].contact[j] * (1 - a.firstShare)
         upper.copy(reaction(point(scratch, contactPoint), a.reaction))
         weight(com, a.weight)
-        drag(com, a.drag)
+        const dragTip = drag(com, a.drag)
+        if (!a.normalN) upper.copy(dragTip)
         lower.copy(com)
       } else if (lens === 'body') {
         joints.forEach((v, i) => dots[i].position.copy(v))
@@ -161,17 +174,22 @@ export function makeLens(scene: THREE.Scene) {
         }
         upper.copy(com)
         lower.copy(joints[p.outside * 3 + 1])
+        grip.visible = !!p.grab?.engaged
+        if (p.grab?.engaged) {
+          point(grip.position, p.grab.point)
+          lower.copy(grip.position)
+        }
       } else {
         for (let i = 0; i < 2; i++) {
           const pos = point(scratch, p.legs[i].contact)
           const load = a.contacts[i],
-            share = load / a.normalN
+            share = a.normalN ? load / a.normalN : 0
           pads[i].position.copy(pos)
           pads[i].quaternion.copy(root.quaternion)
           pads[i].rotateX(-Math.PI / 2)
           pads[i].scale.set(
             (board ? 0.098 : 0.054) * (0.65 + share),
-            board ? 0.255 : 0.46,
+            (board ? 0.255 : 0.46) * a.contactFraction,
             1,
           )
           const v = a.normal.map((n) => n * load) as Point3

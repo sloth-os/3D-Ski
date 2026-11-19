@@ -4,18 +4,23 @@ import { idealTurn, type Lens } from './analysis.ts'
 import type { Setup } from './course.ts'
 import type { MountainView } from './mountain.ts'
 import { canvasMountain } from './scene/canvas.ts'
-import { clamp } from './physics.ts'
+import { clamp, type Frame } from './physics.ts'
 
 export function PoseStudy({
   setup,
   angle,
   speed,
+  frame,
+  trail,
 }: {
   setup: Setup
   angle: number
   speed: number
+  frame?: Frame
+  trail?: readonly Frame[]
 }) {
   const mount = useRef<HTMLDivElement>(null),
+    gripLabel = useRef<HTMLSpanElement>(null),
     orbit = useRef(-0.25),
     pointer = useRef<{ id: number; x: number } | null>(null)
   const [playing, setPlaying] = useState(false),
@@ -23,11 +28,11 @@ export function PoseStudy({
     [closeUp, setCloseUp] = useState(false)
   const phase = useRef(0),
     refresh = useRef(true),
-    config = useRef({ angle, speed, playing, lens, closeUp })
-  config.current = { angle, speed, playing, lens, closeUp }
+    config = useRef({ angle, speed, playing, lens, closeUp, frame })
+  config.current = { angle, speed, playing, lens, closeUp, frame }
   useEffect(() => {
     refresh.current = true
-  }, [angle, speed, lens, playing, closeUp])
+  }, [angle, speed, lens, playing, closeUp, frame])
   useEffect(() => {
     const host = mount.current!
     let dead = false,
@@ -46,7 +51,7 @@ export function PoseStudy({
         () => canvasMountain,
       )
       if (dead) return
-      view = create(host, setup, true)
+      view = create(host, setup, true, trail)
       function draw(now: number) {
         if (dead) return
         const opt = config.current
@@ -56,18 +61,30 @@ export function PoseStudy({
         ) {
           if (opt.playing && last)
             phase.current += 1.2 * clamp((now - last) / 1000, 0, 0.08)
-          const f = idealTurn(setup, opt.angle, opt.speed, phase.current)
-          view!.draw(f, {
+          const f =
+            opt.frame ?? idealTurn(setup, opt.angle, opt.speed, phase.current)
+          const projection = view!.draw(f, {
             camera: opt.closeUp ? 'edge' : 'side',
             lens: opt.lens,
             forces: true,
             line: false,
             orbit: orbit.current,
             tilt: 0.045,
-            zoom: opt.closeUp ? 1.05 : 0.75,
+            zoom: opt.closeUp ? 1.05 : opt.frame ? 0.85 : 0.75,
             preview: false,
             reduced: true,
           })
+          const label = gripLabel.current
+          if (label) {
+            const at = projection.lower
+            label.hidden =
+              opt.lens !== 'body' || f.air.pose < 0.99 || !at.visible
+            label.style.left = at.x * 100 + '%'
+            label.style.top = at.y * 100 + '%'
+            label.dataset.flip = String(
+              at.x * host.clientWidth > host.clientWidth - 150,
+            )
+          }
           refresh.current = false
           last = now
         }
@@ -82,14 +99,18 @@ export function PoseStudy({
       cancelAnimationFrame(raf)
       view?.dispose()
     }
-  }, [setup])
+  }, [setup, trail])
   return (
     <div className="pose-study">
       <div
         className="study-surface"
         ref={mount}
         role="img"
-        aria-label="Interactive 3D rider showing the selected edge angle and body position. Drag to orbit."
+        aria-label={
+          frame
+            ? '3D ski trick replay. Drag to orbit the rider.'
+            : 'Interactive 3D rider showing the selected edge angle and body position. Drag to orbit.'
+        }
         onPointerDown={(e) => {
           e.currentTarget.setPointerCapture(e.pointerId)
           pointer.current = { id: e.pointerId, x: e.clientX }
@@ -104,6 +125,12 @@ export function PoseStudy({
         }}
         onLostPointerCapture={() => (pointer.current = null)}
       />
+      {(setup.technique === 'muteGrab' || setup.technique === 'safetyGrab') && (
+        <span className="study-grip" ref={gripLabel} hidden>
+          {setup.technique === 'muteGrab' ? 'Left glove' : 'Right glove'} ·
+          right ski
+        </span>
+      )}
       <div className="study-tools">
         <button
           onClick={() => {
@@ -123,15 +150,17 @@ export function PoseStudy({
         </button>
       </div>
       <div className="study-foot">
-        <button
-          onClick={() => {
-            if (!playing) phase.current = 0
-            setPlaying(!playing)
-          }}
-        >
-          {playing ? <Pause size={12} /> : <Play size={12} />}{' '}
-          {playing ? 'Hold pose' : 'Link turns'}
-        </button>
+        {!frame && (
+          <button
+            onClick={() => {
+              if (!playing) phase.current = 0
+              setPlaying(!playing)
+            }}
+          >
+            {playing ? <Pause size={12} /> : <Play size={12} />}{' '}
+            {playing ? 'Hold pose' : 'Link turns'}
+          </button>
+        )}
         <select
           aria-label="3D study layer"
           value={lens}

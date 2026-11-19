@@ -30,6 +30,8 @@ import {
   Waves,
   Wind,
 } from 'lucide-react'
+import { isTrick, isSpin, usesPose, tricks, type TrickId } from './tricks.ts'
+import { trickPhase } from './air.ts'
 import { cameras, type CameraMode } from './cameras.ts'
 import { analyse, riderPose, riderMass, type Lens } from './analysis.ts'
 import {
@@ -45,7 +47,7 @@ import {
 } from './course.ts'
 import { lineAt, type Frame } from './physics.ts'
 import { lengthText, type Prefs } from './storage.ts'
-import type { TrainingRun } from './useRun.ts'
+import { cancelPop, type TrainingRun } from './useRun.ts'
 import { SchemeTabs, SelectField, Toggle } from './UI.tsx'
 
 export function TrailMap({
@@ -198,7 +200,7 @@ export function InstrumentPanel({
             {
               icon: CircleDot,
               label: 'COM height',
-              value: p.com[1].toFixed(2),
+              value: p.comHeight.toFixed(2),
               unit: 'm',
               tint: 'green',
             },
@@ -271,12 +273,18 @@ export function InstrumentPanel({
               </button>
             ))}
           </div>
-          <div className="load-split">
+          <div
+            className="load-split"
+            data-airborne={frame.air.phase === 'flight'}
+          >
             <header>
               <span>{board ? 'Binding load' : 'Ski pressure'}</span>
               <b>
-                {Math.round(a.firstShare * 100)} /{' '}
-                {100 - Math.round(a.firstShare * 100)}
+                {frame.air.phase === 'flight'
+                  ? 'Airborne'
+                  : Math.round(a.firstShare * 100) +
+                    ' / ' +
+                    (100 - Math.round(a.firstShare * 100))}
               </b>
             </header>
             <div>
@@ -347,9 +355,17 @@ export function FrameInspector({ f, setup }: { f: Frame; setup: Setup }) {
             Math.round(p.legs[1].angle) + '°',
           ],
           ['Loaded edge', a.edgeName],
-          ['Turn phase', a.phase],
+          [isTrick(setup.technique) ? 'Trick phase' : 'Turn phase', a.phase],
           ['Normal load', Math.round(a.normalN) + ' N'],
           ['Apparent load', a.loadG.toFixed(2) + ' g'],
+          ...(isTrick(setup.technique)
+            ? [
+                ['Airtime', f.air.elapsed.toFixed(2) + ' s'],
+                ['Peak lift', f.air.peak.toFixed(2) + ' m'],
+                ['Rotation', Math.round((f.air.spin * 180) / Math.PI) + '°'],
+                ['Stance', f.air.switch ? 'Switch' : 'Forward'],
+              ]
+            : []),
         ].map(([key, val]) => (
           <div key={key}>
             <small>{key}</small>
@@ -367,9 +383,11 @@ export function FrameInspector({ f, setup }: { f: Frame; setup: Setup }) {
 }
 export function FlightInstruments({
   run,
+  freestyle,
   units,
   details,
 }: {
+  freestyle: boolean
   run: TrainingRun
   units: Prefs['units']
   details: () => void
@@ -397,17 +415,23 @@ export function FlightInstruments({
           <small>{metric ? 'km/h' : 'mph'}</small>
         </span>
         <span className="secondary-reading">
-          <b>{Math.round(Math.abs(f.edge))}°</b>
-          <small>Edge angle</small>
+          <b>
+            {freestyle
+              ? f.air.elapsed.toFixed(2) + 's'
+              : Math.round(Math.abs(f.edge)) + '°'}
+          </b>
+          <small>{freestyle ? 'Airtime' : 'Edge angle'}</small>
         </span>
         <span className="secondary-reading">
           <b>
-            {Number.isFinite(f.radius)
-              ? (f.radius * (metric ? 1 : 3.28084)).toFixed(1)
-              : '∞'}
-            <em>{metric ? 'm' : 'ft'}</em>
+            {freestyle
+              ? Math.round((f.air.spin * 180) / Math.PI) + '°'
+              : Number.isFinite(f.radius)
+                ? (f.radius * (metric ? 1 : 3.28084)).toFixed(1)
+                : '∞'}
+            {!freestyle && <em>{metric ? 'm' : 'ft'}</em>}
           </b>
-          <small>Turn radius</small>
+          <small>{freestyle ? 'Spin' : 'Turn radius'}</small>
         </span>
       </span>
     </button>
@@ -534,8 +558,21 @@ export function Dock({
     </div>
   )
 }
-export function TouchPad({ run, force }: { run: TrainingRun; force: boolean }) {
+export function TouchPad({
+  run,
+  force,
+  technique,
+}: {
+  run: TrainingRun
+  force: boolean
+  technique: TechniqueId
+}) {
   if (run.phase !== 'running') return null
+  function cancel(key: string) {
+    if (key === 'jump' && run.keys.current.has(key))
+      cancelPop(run.current.current)
+    run.keys.current.delete(key)
+  }
   const button = (key: string, label: string, icon: React.ReactNode) => (
     <button
       aria-label={label}
@@ -544,9 +581,9 @@ export function TouchPad({ run, force }: { run: TrainingRun; force: boolean }) {
         e.currentTarget.setPointerCapture(e.pointerId)
         run.keys.current.add(key)
       }}
-      onPointerCancel={() => run.keys.current.delete(key)}
+      onPointerCancel={() => cancel(key)}
       onPointerUp={() => run.keys.current.delete(key)}
-      onLostPointerCapture={() => run.keys.current.delete(key)}
+      onLostPointerCapture={() => cancel(key)}
     >
       {icon}
     </button>
@@ -558,6 +595,11 @@ export function TouchPad({ run, force }: { run: TrainingRun; force: boolean }) {
         {button('right', 'Steer right', <ArrowRight />)}
       </div>
       <div>
+        {isTrick(technique) &&
+          button('jump', 'Hold to load, release to jump', <small>Pop</small>)}
+        {isTrick(technique) &&
+          usesPose(technique) &&
+          button('pose', 'Hold the trick pose', <small>Pose</small>)}
         {button('tuck', 'Tuck', <ArrowUp />)}
         {button('flex', 'Flex legs', <ChevronsDown />)}
         {button('brake', 'Brake', <small>Brake</small>)}
@@ -635,6 +677,7 @@ export function Loadout({
         items={options.map((value) => ({
           value,
           name: techniques[value].name,
+          group: isTrick(value) ? 'Ski tricks' : 'Turns',
         }))}
         onChange={(v) => setDraft({ ...draft, technique: v as TechniqueId })}
       />
@@ -657,5 +700,81 @@ export function Loadout({
         <ArrowRight size={16} />
       </button>
     </div>
+  )
+}
+
+export function TrickHUD({
+  frame: f,
+  id,
+  preview,
+}: {
+  frame: Frame
+  id: TrickId
+  preview: boolean
+}) {
+  const a = f.air,
+    landed =
+      !preview &&
+      (a.phase === 'landing' || a.phase === 'ready') &&
+      a.result &&
+      f.t - a.landedAt < 1.8,
+    flight = a.phase === 'flight'
+  const caption = preview ? 'Reference jump' : landed ? a.result : trickPhase(f)
+  const percent =
+    a.phase === 'load'
+      ? a.charge
+      : flight
+        ? Math.min(1, a.elapsed / a.duration)
+        : 0
+  const action = usesPose(id)
+    ? 'K · Hold pose'
+    : isSpin(id)
+      ? '← / → · Set spin'
+      : ''
+  return (
+    <section
+      className="trick-hud"
+      aria-label="Trick practice"
+      data-phase={a.phase}
+      data-stance={a.switch ? 'switch' : 'forward'}
+    >
+      <div className="hud-kicker">
+        <i />
+        {caption}
+        {landed && a.award > 0 ? ' +' + a.award : ''}
+      </div>
+      <header>
+        <strong>{tricks[id].name}</strong>
+        <span>{a.switch ? 'Switch' : 'Forward'}</span>
+      </header>
+      <div
+        className="jump-meter"
+        role="meter"
+        aria-label={flight ? 'Flight progress' : 'Pop charge'}
+        aria-valuemin={0}
+        aria-valuemax={100}
+        aria-valuenow={Math.round(percent * 100)}
+      >
+        <i style={{ width: 100 * percent + '%' }} />
+      </div>
+      <footer>
+        <span className="key-hint">
+          {a.phase === 'load'
+            ? Math.round(a.charge * 100) + '% · Release J'
+            : 'J · Hold & release'}
+        </span>
+        <span className="touch-hint">
+          {a.phase === 'load' ? 'Release Pop' : 'Hold & release Pop'}
+        </span>
+        {action && (
+          <>
+            <span className="key-hint">{action}</span>
+            <span className="touch-hint">
+              {usesPose(id) ? 'Hold Pose' : 'Steer at pop'}
+            </span>
+          </>
+        )}
+      </footer>
+    </section>
   )
 }

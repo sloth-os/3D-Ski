@@ -4,8 +4,8 @@ import { chromium } from 'playwright-core'
 import { preview } from 'vite'
 
 test(
-  'a project-site install loads every course and saves a run with its host offline',
-  { timeout: 60000 },
+  'a project-site install loads the courses and freestyle replays and saves touch-controlled runs with its host offline',
+  { timeout: 100000 },
   async (t) => {
     const base = '/pages-check/'
     const host = await preview({
@@ -113,6 +113,75 @@ test(
     await page.getByRole('link', { name: 'Run log', exact: true }).click()
     assert.match(await page.locator('.log-table').innerText(), /Pine Meadow/)
     assert.match(await page.locator('.log-table').innerText(), /Skidded turns/)
+    await page.goto(url + '#ski-tricks/safetyGrab')
+    const offlineReplay = await page.reload()
+    assert.ok(offlineReplay.fromServiceWorker())
+    await page
+      .locator('.study-surface canvas[data-renderer="canvas"]')
+      .waitFor()
+    await page
+      .locator('.study-grip')
+      .filter({ hasText: 'Right glove · right ski' })
+      .waitFor()
+    const practice = page.getByRole('button', { name: 'Practice this trick' })
+    const launchButton = await practice.boundingBox()
+    assert.ok(
+      launchButton &&
+        launchButton.y >= 0 &&
+        launchButton.y + launchButton.height <= page.viewportSize().height,
+    )
+    await practice.click()
+    await page
+      .getByRole('combobox', { name: 'Playback speed' })
+      .selectOption('0.5')
+    const touch = await context.newCDPSession(page)
+    async function pressControl(name) {
+      const box = await page
+        .getByRole('button', { name, exact: true })
+        .boundingBox()
+      assert.ok(box)
+      await touch.send('Input.dispatchTouchEvent', {
+        type: 'touchStart',
+        touchPoints: [{ x: box.x + box.width / 2, y: box.y + box.height / 2 }],
+      })
+    }
+    const release = () =>
+      touch.send('Input.dispatchTouchEvent', {
+        type: 'touchEnd',
+        touchPoints: [],
+      })
+    const meter = (value) =>
+      page.waitForFunction(
+        (min) =>
+          +document
+            .querySelector('.jump-meter')
+            .getAttribute('aria-valuenow') >= min,
+        value,
+      )
+    await pressControl('Hold to load, release to jump')
+    await meter(100)
+    await release()
+    await page.locator('.trick-hud[data-phase="flight"]').waitFor()
+    await pressControl('Hold the trick pose')
+    await meter(55)
+    await release()
+    await page
+      .locator('.hud-kicker')
+      .filter({ hasText: /Clean landing \+180/i })
+      .waitFor()
+    await page.getByRole('button', { name: 'End run', exact: true }).click()
+    await page.waitForFunction(
+      () =>
+        JSON.parse(localStorage.getItem('fallline.runs') || '[]').length === 2,
+    )
+    await page.reload()
+    await page.getByRole('link', { name: 'Run log', exact: true }).click()
+    assert.match(await page.locator('.log-table').innerText(), /Safety grab/)
+    assert.match(await page.locator('.log-table').innerText(), /Skidded turns/)
+    const mostRecent = await page.evaluate(
+      () => JSON.parse(localStorage.getItem('fallline.runs'))[0],
+    )
+    assert.equal(mostRecent.freestyle.points, 180)
     assert.deepEqual(errors, [])
   },
 )

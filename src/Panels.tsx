@@ -51,6 +51,16 @@ export function Controls() {
       text: 'Pause your descent and resume when ready.',
     },
     {
+      keys: ['J'],
+      name: 'Pop on skis',
+      text: 'In a ski trick drill, hold to preload the legs, then release to jump. A fuller charge gives more airtime.',
+    },
+    {
+      keys: ['K'],
+      name: 'Pose or grab',
+      text: 'In shifty and grab drills, hold K after takeoff and release before touching down. In spin drills, hold left or right as J is released to set the rotation.',
+    },
+    {
       keys: ['C'],
       name: 'Change camera',
       text: 'Cycle through chase, helmet, trackside, edge, and aerial cameras. Keys 1–5 select a view directly.',
@@ -183,7 +193,20 @@ export function RunDetails({
               ' ' +
               (metric ? 'km/h' : 'mph'),
           ],
-          ['In edge range', record.quality + '%'],
+          [
+            record.freestyle ? 'Clean landings' : 'In edge range',
+            record.quality + '%',
+          ],
+          ...(record.freestyle
+            ? [
+                [
+                  'Tricks landed',
+                  record.freestyle.landed + ' / ' + record.freestyle.attempts,
+                ],
+                ['Best airtime', record.freestyle.bestTime.toFixed(2) + ' s'],
+                ['Trick points', record.freestyle.points],
+              ]
+            : []),
         ].map(([name, value]) => (
           <div key={name}>
             <span>{name}</span>
@@ -196,11 +219,13 @@ export function RunDetails({
         <div>
           <h3>Next run</h3>
           <p>
-            {record.gates === c.gates
-              ? 'You cleared every gate. Repeat on a different snow surface and compare your turn shape.'
-              : record.turns < 2
-                ? 'Build a left turn, release, then roll onto the right edges. Try linking two turns before adding speed.'
-                : techniques[record.setup.technique].watch}
+            {record.freestyle
+              ? techniques[record.setup.technique].watch
+              : record.gates === c.gates
+                ? 'You cleared every gate. Repeat on a different snow surface and compare your turn shape.'
+                : record.turns < 2
+                  ? 'Build a left turn, release, then roll onto the right edges. Try linking two turns before adding speed.'
+                  : techniques[record.setup.technique].watch}
           </p>
         </div>
       </div>

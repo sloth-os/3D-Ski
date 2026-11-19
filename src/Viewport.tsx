@@ -185,13 +185,22 @@ export function Viewport({
   const labels =
     lens === 'forces'
       ? [
-          ['Snow reaction', Math.round(a.reactionN) + ' N'],
+          f.air.phase === 'flight'
+            ? ['Air drag', Math.round(a.dragN) + ' N']
+            : ['Snow reaction', Math.round(a.reactionN) + ' N'],
           ['Gravity', Math.round(a.weightN) + ' N'],
         ]
       : lens === 'body'
         ? [
-            ['Center of mass', p.com[1].toFixed(2) + ' m'],
-            ['Knee flexion', Math.round(p.legs[p.outside].angle) + '°'],
+            ['Center of mass', p.comHeight.toFixed(2) + ' m'],
+            p.grab?.engaged
+              ? [
+                  'Grab contact',
+                  p.grab.hand === 1
+                    ? 'Right hand · right ski'
+                    : 'Left hand · right ski',
+                ]
+              : ['Knee flexion', Math.round(p.legs[p.outside].angle) + '°'],
           ]
         : [
             [

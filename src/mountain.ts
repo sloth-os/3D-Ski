@@ -1,3 +1,4 @@
+import { bodyHeading } from './air.ts'
 import * as THREE from 'three'
 import { courses, equipmentFor, type Course, type Setup } from './course.ts'
 import {
@@ -59,7 +60,8 @@ function makeTracks(scene: THREE.Scene, course: Course, board: boolean) {
     scene.add(m)
     return { m, g, buffer }
   })
-  let last = -1,
+  let gap = false,
+    last = -1,
     size = 0
   return (f: Frame, visible: boolean) => {
     if (f.d < last) {
@@ -69,10 +71,16 @@ function makeTracks(scene: THREE.Scene, course: Course, board: boolean) {
     }
     tracks.forEach((t) => (t.m.visible = visible))
     if (!visible || f.d - last < 0.24) return
+    const flying = f.air.phase === 'flight'
     const index = Math.min(size, length - 1)
     tracks.forEach(({ buffer, g }, i) => {
       if (size === length) buffer.copyWithin(0, 6)
-      const width = board ? 0.105 + 0.09 * f.slip : 0.037 + 0.044 * f.slip
+      const width =
+        flying || gap
+          ? 0
+          : board
+            ? 0.105 + 0.09 * f.slip
+            : 0.037 + 0.044 * f.slip
       for (let j = 0; j < 2; j++) {
         const offset = (board ? 0 : i ? 0.192 : -0.192) + (j - 0.5) * width * 2,
           x = f.x + Math.cos(f.heading) * offset,
@@ -87,6 +95,7 @@ function makeTracks(scene: THREE.Scene, course: Course, board: boolean) {
     })
     size = Math.min(length, size + 1)
     last = f.d
+    gap = flying
   }
 }
 function makeStudyFloor(scene: THREE.Scene) {
@@ -107,6 +116,7 @@ export function createMountain(
   container: HTMLElement,
   setup: Setup,
   study = false,
+  replay?: readonly Frame[],
 ): MountainView {
   const canvas = document.createElement('canvas')
   let renderer: THREE.WebGLRenderer
@@ -118,10 +128,10 @@ export function createMountain(
       powerPreference: 'high-performance',
     }
     const gl = canvas.getContext('webgl2', params)
-    if (!gl) return canvasMountain(container, setup, study)
+    if (!gl) return canvasMountain(container, setup, study, replay)
     renderer = new THREE.WebGLRenderer({ canvas, context: gl, ...params })
   } catch {
-    return canvasMountain(container, setup, study)
+    return canvasMountain(container, setup, study, replay)
   }
   canvas.dataset.renderer = 'webgl'
   container.appendChild(canvas)
@@ -158,6 +168,22 @@ export function createMountain(
   const terrain = study
     ? makeStudyFloor(scene)
     : addTerrain(scene, c, setup, gates)
+  if (replay) {
+    const path = replay
+      .filter((s) => s.air.phase === 'flight')
+      .map((s) => pointAt(c, s.x, s.d, s.air.height + 0.045))
+    const line = new THREE.Line(
+      new THREE.BufferGeometry().setFromPoints(path),
+      new THREE.LineDashedMaterial({
+        color: 0xd2ef9a,
+        dashSize: 0.14,
+        gapSize: 0.1,
+        toneMapped: false,
+      }),
+    )
+    line.computeLineDistances()
+    scene.add(line)
+  }
   const backdrop = study
     ? new THREE.Texture()
     : new THREE.TextureLoader().load(
@@ -272,7 +298,13 @@ export function createMountain(
       sky.position.y -= 143
       container.dataset.plate = plate ? 'on' : 'off'
       skier.root.position.copy(pos)
-      skier.root.rotation.set(-pitch, -f.heading - f.boardYaw, 0, 'XYZ')
+      skier.root.position.y += f.air.height
+      skier.root.rotation.set(
+        -pitch,
+        -f.heading - f.boardYaw - bodyHeading(f),
+        0,
+        'XYZ',
+      )
       const pose = riderPose(f, setup),
         forces = analyse(f, setup)
       skier.pose(f, pose, opt.camera === 'first')

@@ -1,3 +1,5 @@
+import { freestyleGuide, isTrick, tricks } from './tricks.ts'
+
 export const courses = {
   ridge: {
     name: 'Alpine Ridge',
@@ -245,8 +247,16 @@ export const techniques = {
     watch:
       'Observe the angle between board heading and travel, the change in speed, and the front-to-rear load distribution.',
   },
+  ...tricks,
 } as const
 export type TechniqueId = keyof typeof techniques
+export function lessonInCollection(
+  freestyle: boolean,
+  preferred: TechniqueId,
+): TechniqueId {
+  if (isTrick(preferred) === freestyle) return preferred
+  return freestyle ? 'straightAir' : 'parallel'
+}
 export type Equipment = 'skis' | 'snowboard'
 export function equipmentFor(id: TechniqueId): Equipment {
   return id === 'boardCarve' || id === 'boardSkid' ? 'snowboard' : 'skis'
@@ -267,6 +277,12 @@ export const defaultSetup: Setup = {
 }
 
 export const references = [
+  {
+    title: 'Freestyle Specialist Performance Guide',
+    publisher: 'PSIA-AASI · Freestyle',
+    url: freestyleGuide,
+    note: 'Approach, takeoff, maneuver, and landing organize the ski trick lessons. The flatland and small-jump assessments describe fore–aft pressure, pop, rotation, and landing control.',
+  },
   {
     title: 'Snowboarding Fundamentals',
     publisher: 'AASI · Snowboard Certification Standards',

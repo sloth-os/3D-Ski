@@ -2,6 +2,7 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 import {
   ArrowDownRight,
   BookOpen,
+  Orbit,
   Check,
   ChevronDown,
   Download,
@@ -24,6 +25,7 @@ import {
   courses,
   techniques,
   equipmentFor,
+  lessonInCollection,
   equipmentName,
   surfaces,
   type Setup,
@@ -49,12 +51,14 @@ import {
   InstrumentPanel,
   Dock,
   TouchPad,
+  TrickHUD,
   Loadout,
   FrameInspector,
 } from './Cockpit.tsx'
 import { Controls, Log, RunDetails, TelemetryHelp } from './Panels.tsx'
 import { Telemetry } from './Telemetry.tsx'
 import { Lab } from './Lab.tsx'
+import { isTrick, type TrickId } from './tricks.ts'
 import { useOffline } from './offline.ts'
 
 type Dialog =
@@ -62,15 +66,20 @@ type Dialog =
   | 'controls'
   | 'setup'
   | 'analysis'
+  | 'ski-tricks'
   | 'technique-lab'
   | 'run-log'
   | null
-const fromHash = (): Dialog =>
-  location.hash === '#technique-lab'
-    ? 'technique-lab'
-    : location.hash === '#run-log'
-      ? 'run-log'
-      : null
+const trickInHash = (): TrickId | null => {
+  const [section, id] = location.hash.split('/')
+  return section === '#ski-tricks' && id && isTrick(id) ? id : null
+}
+const fromHash = (): Dialog => {
+  const section = location.hash.split('/')[0]
+  if (section === '#ski-tricks') return 'ski-tricks'
+  if (section === '#technique-lab') return 'technique-lab'
+  return section === '#run-log' ? 'run-log' : null
+}
 export default function App() {
   const [setup, setSetup] = useState<Setup>(initialSetup),
     [prefs, setPrefs] = useState(initialPrefs),
@@ -78,7 +87,12 @@ export default function App() {
   const [dialog, setDialog] = useState<Dialog>(fromHash),
     [review, setReview] = useState<Run | null>(null),
     log = useRef(runs)
-  const [labId, setLabId] = useState<TechniqueId>(setup.technique),
+  const [labId, setLabId] = useState<TechniqueId>(() =>
+      lessonInCollection(
+        dialog === 'ski-tricks',
+        trickInHash() ?? setup.technique,
+      ),
+    ),
     [camera, setCamera] = useState<CameraMode>('chase'),
     [lens, setLens] = useState<Lens>('forces')
   const [resetView, reset] = useState(0),
@@ -116,6 +130,8 @@ export default function App() {
   }
   function open(which: Dialog) {
     run.pause()
+    if (which === 'ski-tricks' || which === 'technique-lab')
+      setLabId(lessonInCollection(which === 'ski-tricks', setup.technique))
     if (which === 'analysis')
       setSnapshot({
         frame: { ...run.current.current },
@@ -124,7 +140,9 @@ export default function App() {
     setDialog(which)
     setReview(null)
     const hash =
-      which === 'run-log' || which === 'technique-lab' ? '#' + which : ''
+      which === 'run-log' || which === 'technique-lab' || which === 'ski-tricks'
+        ? '#' + which
+        : ''
     history.replaceState(null, '', location.pathname + location.search + hash)
   }
   function start(demo = false) {
@@ -173,7 +191,15 @@ export default function App() {
   useEffect(() => {
     const hash = () => {
         run.pause()
-        setDialog(fromHash())
+        const section = fromHash()
+        setDialog(section)
+        if (section === 'ski-tricks' || section === 'technique-lab')
+          setLabId(
+            lessonInCollection(
+              section === 'ski-tricks',
+              trickInHash() ?? setup.technique,
+            ),
+          )
         setReview(null)
       },
       fs = () => setFull(!!document.fullscreenElement)
@@ -191,7 +217,7 @@ export default function App() {
       window.removeEventListener('storage', storage)
       document.removeEventListener('fullscreenchange', fs)
     }
-  }, [run.pause])
+  }, [run.pause, setup.technique])
   useEffect(() => {
     if (run.phase === 'running' || run.phase === 'demo')
       world.current?.focus({ preventScroll: true })
@@ -307,12 +333,23 @@ export default function App() {
               aria-label="Technique lab"
               onClick={(e) => {
                 e.preventDefault()
-                setLabId(setup.technique)
                 open('technique-lab')
               }}
             >
               <BookOpen size={16} />
               <span>Technique lab</span>
+            </a>
+            <a
+              href="#ski-tricks"
+              aria-label="Ski tricks"
+              title="Ski tricks"
+              onClick={(e) => {
+                e.preventDefault()
+                open('ski-tricks')
+              }}
+            >
+              <Orbit size={17} />
+              <span>Ski tricks</span>
             </a>
             <a
               href="#run-log"
@@ -415,21 +452,26 @@ export default function App() {
       )}
       <FlightInstruments
         run={run}
+        freestyle={isTrick(setup.technique)}
         units={prefs.units}
         details={() => open('analysis')}
       />
-      <div className="technique-cue">
-        <span className="hud-kicker">
-          <Target size={12} />
-          Technique focus
-        </span>
-        <b>{techniques[setup.technique].name}</b>
-        <span>
-          {preview ? techniques[setup.technique].cue : coachingCue(f, setup)}
-        </span>
-      </div>
+      {isTrick(setup.technique) ? (
+        <TrickHUD frame={f} id={setup.technique} preview={preview} />
+      ) : (
+        <div className="technique-cue">
+          <span className="hud-kicker">
+            <Target size={12} />
+            Technique focus
+          </span>
+          <b>{techniques[setup.technique].name}</b>
+          <span>
+            {preview ? techniques[setup.technique].cue : coachingCue(f, setup)}
+          </span>
+        </div>
+      )}
       <TrailMap run={run} setup={setup} units={prefs.units} />
-      <TouchPad run={run} force={prefs.touch} />
+      <TouchPad run={run} force={prefs.touch} technique={setup.technique} />
       <Dock
         run={run}
         camera={camera}
@@ -489,17 +531,29 @@ export default function App() {
           </details>
         </Modal>
       )}
-      {dialog === 'technique-lab' && (
+      {(dialog === 'technique-lab' || dialog === 'ski-tricks') && (
         <Modal
-          title="Technique lab"
-          aria-label="Technique lab"
+          title={dialog === 'ski-tricks' ? 'Ski tricks' : 'Technique lab'}
           wide
           onClose={close}
         >
           <Lab
             setup={setup}
             id={labId}
-            select={setLabId}
+            select={(id) => {
+              setLabId(id)
+              const section = isTrick(id) ? 'ski-tricks' : 'technique-lab'
+              setDialog(section)
+              history.replaceState(
+                null,
+                '',
+                location.pathname +
+                  location.search +
+                  '#' +
+                  section +
+                  (isTrick(id) ? '/' + id : ''),
+              )
+            }}
             practice={practice}
             units={prefs.units}
           />

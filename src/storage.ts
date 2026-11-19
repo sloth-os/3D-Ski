@@ -44,6 +44,11 @@ export function initialLog(): Run[] {
         (r): r is Run =>
           !!r &&
           isSetup(r.setup) &&
+          (r.freestyle === undefined ||
+            (r.freestyle !== null &&
+              ['landed', 'attempts', 'bestTime', 'points'].every(
+                (k) => Number.isFinite(r.freestyle[k]) && r.freestyle[k] >= 0,
+              ))) &&
           typeof r.id === 'string' &&
           Number.isFinite(Date.parse(r.date)) &&
           [

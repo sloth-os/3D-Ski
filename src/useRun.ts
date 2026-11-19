@@ -22,6 +22,8 @@ export const keyBindings = {
   tuck: ['ArrowUp', 'KeyW'],
   flex: ['ArrowDown', 'KeyS'],
   brake: ['Space'],
+  jump: ['KeyJ'],
+  pose: ['KeyK'],
 } as const
 export const skiingKeys = new Set<string>(Object.values(keyBindings).flat())
 export function useRun(
@@ -76,6 +78,7 @@ export function useRun(
   }, [change])
   const resume = useCallback(() => {
     if (state.current === 'paused') {
+      if (!demoOrigin.current) cancelPop(current.current)
       if (enabled.current) audio.current.enable()
       change(demoOrigin.current ? 'demo' : 'running')
     }
@@ -148,6 +151,8 @@ export function useRun(
         tuck: down('tuck'),
         flex: down('flex'),
         brake: down('brake'),
+        jump: down('jump'),
+        pose: down('pose'),
       }
       const f = current.current,
         before = f.gatesHit
@@ -167,7 +172,11 @@ export function useRun(
       if (now - lastSample >= 110 || f.done) {
         setFrame({ ...f })
         setSamples((old) => [...old.slice(-43), sample(f, setup)])
-        audio.current.update(f.speed, f.edge, enabled.current && !study)
+        audio.current.update(
+          f.speed,
+          f.edge,
+          enabled.current && !study && f.air.phase !== 'flight',
+        )
         lastSample = now
       }
       if (!study && before !== f.gatesHit && enabled.current)
@@ -224,3 +233,7 @@ export function useRun(
   }
 }
 export type TrainingRun = ReturnType<typeof useRun>
+
+export function cancelPop(f: Frame) {
+  if (f.air.phase === 'load') f.air = { ...f.air, phase: 'ready', charge: 0 }
+}

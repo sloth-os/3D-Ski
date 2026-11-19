@@ -1,7 +1,9 @@
+import { bodyHeading } from '../air.ts'
 import { courses, equipmentFor, type Setup } from '../course.ts'
 import { cameraShot, isTrailhead, type ScreenPoint } from '../cameras.ts'
 import {
   analyse,
+  deckPoint,
   riderPose,
   add3,
   scale3,
@@ -9,7 +11,13 @@ import {
   lensColors,
   type Point3,
 } from '../analysis.ts'
-import { buildGates, lineAt, radians, worldHeight } from '../physics.ts'
+import {
+  buildGates,
+  lineAt,
+  radians,
+  worldHeight,
+  type Frame,
+} from '../physics.ts'
 import type { MountainView } from '../mountain.ts'
 
 const sub = (a: Point3, b: Point3) => add3(a, scale3(b, -1))
@@ -24,6 +32,7 @@ export function canvasMountain(
   container: HTMLElement,
   setup: Setup,
   study = false,
+  replay?: readonly Frame[],
 ): MountainView {
   const canvas = document.createElement('canvas'),
     ctx = canvas.getContext('2d')!,
@@ -41,7 +50,10 @@ export function canvasMountain(
     worldHeight(course, d, x) + y,
     -d * Math.cos(course.pitch * radians),
   ]
-  const tracks: Point3[][] = board ? [[]] : [[], []]
+  const arc = replay
+    ?.filter((s) => s.air.phase === 'flight')
+    .map((s) => at(s.x, s.d, s.air.height + 0.045))
+  const tracks: (Point3 | null)[][] = board ? [[]] : [[], []]
   let lastDistance = -1
   return {
     draw(f, opt) {
@@ -102,6 +114,7 @@ export function canvasMountain(
         ctx.fill()
       }
       const arrow = (p: Point3, force: Point3, color: string) => {
+        if (magnitude(force) < 0.7) return p
         const end = add3(p, scale3(force, 1.39 / (75 * 9.81)))
         stroke(p, end, color, 0.012)
         const a = project(p),
@@ -122,13 +135,13 @@ export function canvasMountain(
         return end
       }
       const pitch = (f.pitch || course.pitch) * radians,
-        yaw = -f.heading - f.boardYaw
+        yaw = -f.heading - f.boardYaw - bodyHeading(f)
       function local(p: Point3): Point3 {
         const x = p[0] * Math.cos(yaw) + p[2] * Math.sin(yaw),
           z = -p[0] * Math.sin(yaw) + p[2] * Math.cos(yaw)
         return add3(pos, [
           x,
-          p[1] * Math.cos(pitch) + z * Math.sin(pitch),
+          p[1] * Math.cos(pitch) + z * Math.sin(pitch) + f.air.height,
           -p[1] * Math.sin(pitch) + z * Math.cos(pitch),
         ])
       }
@@ -172,19 +185,24 @@ export function canvasMountain(
           tracks.forEach((track, i) => {
             const offset = board ? 0 : i ? 0.192 : -0.192
             track.push(
-              at(
-                f.x + Math.cos(f.heading) * offset,
-                f.d - Math.sin(f.heading) * offset,
-                0.021,
-              ),
+              f.air.phase === 'flight'
+                ? null
+                : at(
+                    f.x + Math.cos(f.heading) * offset,
+                    f.d - Math.sin(f.heading) * offset,
+                    0.021,
+                  ),
             )
             if (track.length > 280) track.shift()
           })
           lastDistance = f.d
         }
         tracks.forEach((track) => {
-          for (let i = 1; i < track.length; i++)
-            stroke(track[i - 1], track[i], '#90a7b473', board ? 0.15 : 0.046)
+          for (let i = 1; i < track.length; i++) {
+            const from = track[i - 1],
+              to = track[i]
+            if (from && to) stroke(from, to, '#90a7b473', board ? 0.15 : 0.046)
+          }
         })
         const objects: { depth: number; draw: () => void }[] = []
         for (
@@ -249,6 +267,9 @@ export function canvasMountain(
             )
         }
       }
+      if (arc)
+        for (let i = 1; i < arc.length; i += 2)
+          stroke(arc[i - 1], arc[i], '#d2ef9a', 0.013)
       const p = riderPose(f, setup),
         a = analyse(f, setup),
         com = local(p.com)
@@ -269,22 +290,19 @@ export function canvasMountain(
       }
       for (const leg of p.legs) {
         if (board && leg.side === 1) continue
-        const base = board ? 0 : leg.side * (0.196 + 0.065 * f.brake),
-          edge = f.edge * radians
         const half = board ? 0.15 : 0.062,
-          lift = 0.031 + half * Math.abs(Math.sin(edge))
-        const toe = board
-          ? 0
-          : leg.side *
-            ((setup.technique === 'wedge' ? 0.18 : 0.008) + f.brake * 0.33)
-        const deck = (s: number, z: number, y = 0): Point3 => {
-          const across = s * half
-          return local([
-            base + across * Math.cos(edge) + Math.sin(toe) * z,
-            lift - across * Math.sin(edge) + y,
-            Math.cos(toe) * z + (board ? 0 : leg.ankle[2]),
-          ])
-        }
+          edge = f.edge * radians
+        const deck = (s: number, z: number, y = 0): Point3 =>
+          board
+            ? local([
+                s * half * Math.cos(edge),
+                0.031 +
+                  half * Math.abs(Math.sin(edge)) -
+                  s * half * Math.sin(edge) +
+                  y,
+                z,
+              ])
+            : local(deckPoint(leg.deck, [s * half, y, z]))
         const vertices = (ring: number[][], color: string) => {
           const points = ring.map(([x, z, y]) => project(deck(x, z, y)))
           if (points.some((q) => q.depth < 0.06)) return
@@ -355,7 +373,16 @@ export function canvasMountain(
           0.195,
         )
         for (const s of [-1, 1]) {
-          const hand = torso([s * (board ? 0.51 : 0.4), 0.11, -0.21])
+          let hand = torso([
+            s * (board ? 0.51 : 0.4) + p.shifty * 0.11,
+            0.11,
+            -0.21 + s * p.shifty * 0.16,
+          ])
+          if (p.grab?.hand === s)
+            hand = add3(
+              scale3(hand, 1 - p.grab.weight),
+              scale3(local(p.grab.point), p.grab.weight),
+            )
           stroke(
             torso([s * 0.19, 0.4, 0]),
             torso([s * 0.32, 0.22, -0.015]),
@@ -379,7 +406,8 @@ export function canvasMountain(
         )
         upper = arrow(local(weighted), a.reaction, lensColors.support)
         arrow(com, a.weight, lensColors.gravity)
-        arrow(com, a.drag, lensColors.drag)
+        const tip = arrow(com, a.drag, lensColors.drag)
+        if (!a.normalN) upper = tip
         lower = com
       }
       if (opt.lens === 'body' && opt.forces) {
@@ -389,13 +417,38 @@ export function canvasMountain(
           ball(local(l.knee), 0.025, '#f6f2ff')
         }
         ball(com, 0.032, lensColors.body)
+        if (p.grab?.engaged) {
+          lower = local(p.grab.point)
+          const grip = project(lower)
+          if (grip.depth > 0.06) {
+            ctx.strokeStyle = lensColors.support
+            ctx.lineWidth = 1.5
+            ctx.beginPath()
+            ctx.arc(grip.x, grip.y, Math.max(3, grip.k * 0.078), 0, 2 * Math.PI)
+            ctx.stroke()
+          }
+        }
       }
       if (opt.lens === 'contact') {
         upper = local(p.legs[0].contact)
         lower = local(p.legs[1].contact)
-        if (opt.forces)
+        if (opt.forces && a.normalN)
           [upper, lower].forEach((v, i) => {
-            ball(v, 0.04, lensColors.support)
+            const leg = p.legs[i],
+              color = i ? lensColors.drag : lensColors.support
+            const length = (board ? 0.255 : 0.46) * a.contactFraction
+            const end: Point3 = [
+              Math.sin(leg.deck.yaw) * length,
+              0,
+              Math.cos(leg.deck.yaw) * length,
+            ]
+            stroke(
+              local(add3(leg.contact, end)),
+              local(add3(leg.contact, scale3(end, -1))),
+              color,
+              0.052,
+            )
+            ball(v, 0.04, color)
             arrow(
               v,
               scale3(a.normal, a.contacts[i]),

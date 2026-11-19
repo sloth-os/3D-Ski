@@ -2,7 +2,7 @@
   "id": "./",
   "name": "Fallline Alpine Simulator",
   "short_name": "Fallline",
-  "description": "Ski and snowboard through offline 3D courses with animated technique studies and force analysis.",
+  "description": "Practice ski tricks and snowboard turns on offline 3D courses with interactive replays and force analysis.",
   "lang": "en",
   "start_url": "./",
   "scope": "./",

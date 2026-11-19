@@ -57,8 +57,10 @@ export function makeSpray(surface: SurfaceId, board: boolean) {
       velocities[k + 1] -= 6.7 * dt
     }
     const amount =
-      (surface === 'powder' ? 1.65 : surface === 'ice' ? 0.32 : 1) *
-      (Math.abs(f.edge) / 45 + 1.6 * f.brake)
+      f.air.phase === 'flight'
+        ? 0
+        : (surface === 'powder' ? 1.65 : surface === 'ice' ? 0.32 : 1) *
+          (Math.abs(f.edge) / 45 + 1.6 * f.brake)
     fraction += Math.min(145, amount * f.speed * 4.5) * dt
     const emitted = Math.floor(fraction)
     fraction -= emitted

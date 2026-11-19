@@ -8,13 +8,22 @@ import {
   type Setup,
 } from './course.ts'
 
-export const radians = Math.PI / 180
-export const clamp = (n: number, low: number, high: number) =>
-  Math.max(low, Math.min(high, n))
+import { clamp, radians, pitchAt, worldHeight } from './slope.ts'
+export { clamp, radians, pitchAt, worldHeight, undulation } from './slope.ts'
+import {
+  initialAir,
+  stepAir,
+  landingSupport,
+  trickDemoControls,
+  type AirState,
+} from './air.ts'
+import { isTrick } from './tricks.ts'
 const approach = (current: number, target: number, rate: number, dt: number) =>
   current + (target - current) * (1 - Math.exp(-rate * dt))
 
 export type Input = {
+  jump?: boolean
+  pose?: boolean
   steer: number
   tuck: boolean
   flex: boolean
@@ -34,6 +43,7 @@ export type Frame = {
   speed: number
   heading: number
   forceHeading: number
+  air: AirState
   edge: number
   radius: number
   load: number
@@ -70,6 +80,7 @@ export const emptyFrame = (): Frame => ({
   speed: 0,
   heading: 0,
   forceHeading: 0,
+  air: initialAir(),
   edge: 0,
   radius: Infinity,
   load: 50,
@@ -100,22 +111,6 @@ export const emptyFrame = (): Frame => ({
   done: false,
 })
 
-// Distance follows the slope. The renderer and the force model sample the same rolling snow surface.
-export function undulation(c: Course, d: number, x = 0): number {
-  return (
-    c.bumps *
-    (Math.sin(d / 15 + x / 28) * 0.68 + Math.sin(d / 7.4 - x / 18) * 0.32)
-  )
-}
-export function worldHeight(c: Course, d: number, x = 0): number {
-  return -d * Math.sin(c.pitch * radians) + undulation(c, d, x)
-}
-export function pitchAt(c: Course, d: number, x = 0) {
-  return Math.atan2(
-    worldHeight(c, d - 0.25, x) - worldHeight(c, d + 0.25, x),
-    0.5 * Math.cos(c.pitch * radians),
-  )
-}
 export function buildGates(c: Course): Gate[] {
   return Array.from({ length: c.gates }, (_, i) => ({
     d: ((i + 0.78) * c.length) / (c.gates + 0.2),
@@ -163,9 +158,30 @@ export function step(
   f.t += dt
   f.pitch = pitch / radians
   f.forceHeading = f.heading
+  const trick = isTrick(setup.technique),
+    beforeX = f.x,
+    beforeD = f.d
+  if (
+    isTrick(setup.technique) &&
+    stepAir(f, setup.technique, course, input, dt)
+  ) {
+    finishStep(f, gates, course, beforeX, beforeD)
+    return
+  }
   f.tuck = approach(f.tuck, input.tuck && !input.brake ? 1 : 0, 4, dt)
   f.brake = approach(f.brake, input.brake ? 1 : 0, 5, dt)
-  f.flex = approach(f.flex, input.flex ? 0.96 : 0.2 + 0.38 * f.tuck, 5, dt)
+  f.flex = approach(
+    f.flex,
+    f.air.phase === 'load'
+      ? 0.24 + 0.72 * f.air.charge
+      : f.air.phase === 'landing'
+        ? 0.82
+        : input.flex
+          ? 0.96
+          : 0.2 + 0.38 * f.tuck,
+    5,
+    dt,
+  )
   const wedge = setup.technique === 'wedge'
   const board = equipmentFor(setup.technique) === 'snowboard'
   const maxEdge = edgeLimit(setup)
@@ -208,7 +224,7 @@ export function step(
     2.5,
     21,
   )
-  f.normalAccel = normal
+  f.normalAccel = normal + landingSupport(f)
   const resistance =
     normal *
     (surface.friction +
@@ -261,8 +277,6 @@ export function step(
     50,
     94,
   )
-  const beforeX = f.x,
-    beforeD = f.d
   f.x = clamp(f.x + Math.sin(f.heading) * f.speed * dt, -26.5, 26.5)
   f.d = Math.min(course.length, f.d + Math.cos(f.heading) * f.speed * dt)
   f.maxSpeed = Math.max(f.maxSpeed, f.speed)
@@ -282,7 +296,16 @@ export function step(
     offPiste < 0.1
   )
     f.focusTime += dt
-  f.quality = Math.round((100 * f.focusTime) / f.t)
+  if (!trick) f.quality = Math.round((100 * f.focusTime) / f.t)
+  finishStep(f, gates, course, beforeX, beforeD)
+}
+function finishStep(
+  f: Frame,
+  gates: Gate[],
+  course: Course,
+  beforeX: number,
+  beforeD: number,
+) {
   const gate = gates[f.gatesSeen]
   if (gate && f.d >= gate.d) {
     const crossingX =
@@ -296,7 +319,7 @@ export function step(
       f.points += 100
     }
   }
-  f.done = f.d >= course.length
+  f.done = f.d >= course.length && f.air.phase !== 'flight'
 }
 
 export type Sample = {
@@ -347,8 +370,20 @@ export function summarize(frame: Frame, setup: Setup) {
     seen: frame.gatesSeen,
     turns: frame.turns,
     points: frame.points,
-    quality: frame.quality,
+    quality: isTrick(setup.technique)
+      ? Math.round((100 * frame.air.landed) / Math.max(1, frame.air.attempts))
+      : frame.quality,
     finished: frame.done,
+    ...(isTrick(setup.technique)
+      ? {
+          freestyle: {
+            landed: frame.air.landed,
+            attempts: frame.air.attempts,
+            bestTime: frame.air.bestTime,
+            points: frame.air.points,
+          },
+        }
+      : {}),
   }
 }
 export type Run = ReturnType<typeof summarize>
@@ -393,13 +428,23 @@ export function demonstrationInput(
     flex: Math.abs(steer) > 0.42 || f.pitch > courses[setup.course].pitch + 1.2,
     tuck: !wedge && Math.abs(steer) < 0.13,
     brake: f.speed > targetSpeed,
+    ...(isTrick(setup.technique)
+      ? trickDemoControls(f, setup.technique, steer)
+      : {}),
   }
 }
 
 export function referenceFrame(setup: Setup): Frame {
   const frame = emptyFrame(),
     gates = buildGates(courses[setup.course])
-  for (let i = 0; i < 646; i++)
+  for (let i = 0; i < 646; i++) {
     step(frame, demonstrationInput(frame, setup, gates), setup, gates, 1 / 60)
+    if (
+      isTrick(setup.technique) &&
+      frame.air.phase === 'flight' &&
+      frame.air.elapsed >= frame.air.duration * 0.5
+    )
+      break
+  }
   return frame
 }

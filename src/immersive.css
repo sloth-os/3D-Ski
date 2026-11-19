@@ -1076,7 +1076,23 @@ body {
   display: none;
 }
 .ski-sim .lab-view .tech-tabs {
-  margin: 15px 0;
+  margin: 8px 0 15px;
+}
+.lesson-collections {
+  display: flex;
+  gap: 16px;
+  border-bottom: 1px solid #39494f;
+}
+.lesson-collections button {
+  font-size: 12px;
+  font-weight: 650;
+  color: #aabdc1;
+  padding: 4px 0 6px;
+  border-bottom: 2px solid transparent;
+}
+.lesson-collections button[aria-pressed='true'] {
+  color: var(--acid);
+  border-bottom-color: var(--acid);
 }
 .ski-sim .lab-view .panel,
 .ski-sim .log-view .panel {
@@ -1630,5 +1646,293 @@ body {
 @media (max-width: 650px), (max-height: 580px) {
   .on-run .course-hud h1 {
     font-size: 30px;
+  }
+}
+
+.trick-hud {
+  position: absolute;
+  left: var(--screen-pad);
+  top: max(292px, 42%);
+  width: clamp(180px, 17vw, 245px);
+  border-left: 2px solid var(--acid);
+  border-radius: 0 5px 5px 0;
+  padding: 9px 12px 9px 10px;
+  background: linear-gradient(90deg, #142b34db, #1b343cb3);
+  pointer-events: none;
+}
+.trick-hud header,
+.trick-hud footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 7px;
+}
+.trick-hud header {
+  margin: 3px 0 6px;
+}
+.trick-hud header strong {
+  color: #fff;
+  font-size: 17px;
+  line-height: 1;
+}
+.trick-hud header span,
+.trick-hud footer {
+  font: 500 9px var(--mono);
+  color: #dae6e8;
+}
+.jump-meter {
+  height: 3px;
+  background: #9aafb055;
+  border-radius: 3px;
+  overflow: hidden;
+}
+.jump-meter i {
+  display: block;
+  background: var(--acid);
+  height: 100%;
+  transition: width 0.1s linear;
+}
+.trick-hud[data-phase='flight'] .jump-meter i {
+  background: #a5daef;
+}
+.trick-hud footer {
+  margin-top: 6px;
+  font-size: 8px;
+}
+.trick-hud .touch-hint {
+  display: none;
+}
+.load-split[data-airborne='true'] > div {
+  background: #61737b;
+}
+.load-split[data-airborne='true'] > div i {
+  visibility: hidden;
+}
+.freestyle-lab .lab-grid {
+  grid-template-columns: 1.08fr 1fr;
+  align-items: stretch;
+}
+.freestyle-lab .trick-study {
+  order: -1;
+  min-width: 0;
+}
+.ski-sim .freestyle-lab .tech-tabs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 5px;
+}
+.ski-sim .freestyle-lab .tech-tabs button {
+  min-height: 32px;
+  font-size: 12px;
+  flex: 1 1 auto;
+}
+.trick-study .replay-scene {
+  position: relative;
+}
+.trick-study .study-surface {
+  height: clamp(224px, 25vw, 330px);
+}
+.trick-study .study-foot {
+  justify-content: flex-end;
+}
+.study-grip {
+  pointer-events: none;
+  position: absolute;
+  transform: translate(23px, -50%);
+  border: 1px solid #91ac75;
+  border-radius: 3px;
+  background: #192b28e8;
+  color: #e0f5bf;
+  padding: 3px 5px;
+  font: 500 9px var(--mono);
+  white-space: nowrap;
+}
+.study-grip::before {
+  content: '';
+  position: absolute;
+  right: 100%;
+  top: 50%;
+  width: 23px;
+  height: 1px;
+  background: #b5da89;
+}
+.study-grip[data-flip='true'] {
+  transform: translate(calc(-100% - 23px), -50%);
+}
+.study-grip[data-flip='true']::before {
+  left: 100%;
+  right: auto;
+}
+.replay-phase {
+  position: absolute;
+  top: 10px;
+  left: 10px;
+  color: var(--acid);
+  font: 500 10px var(--mono);
+  background: #152a30cf;
+  border-radius: 3px;
+  padding: 4px 6px;
+}
+.replay-transport {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+}
+.replay-transport > button {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  min-height: 30px;
+  border: 1px solid #75938b70;
+  border-radius: 4px;
+  color: #edf8eb;
+}
+.replay-transport .outline-btn {
+  border-color: #9fbf7b8c;
+  color: var(--acid);
+  padding: 4px 10px;
+  background: #304437;
+}
+.replay-transport span {
+  margin-left: auto;
+  font: 500 10px var(--mono);
+  color: #c0d2d6;
+}
+.replay-slider {
+  display: block;
+  margin: 12px 0 3px;
+}
+.replay-slider span {
+  font-size: 11px;
+  font-weight: 550;
+  color: #d0dddf;
+}
+.replay-slider input {
+  display: block;
+  width: 100%;
+  height: 20px;
+  margin: 2px 0;
+  accent-color: var(--acid);
+}
+.phase-stops {
+  display: flex;
+  gap: 3px;
+  justify-content: space-between;
+}
+.phase-stops button {
+  font: 500 9px var(--mono);
+  padding: 4px 3px;
+  color: #acc0c5;
+  border-radius: 3px;
+}
+.phase-stops button[aria-pressed='true'] {
+  background: #304639;
+  color: var(--acid);
+}
+.trick-source {
+  display: inline-flex;
+  gap: 5px;
+  align-items: center;
+  margin-top: 10px;
+  color: var(--acid);
+  font-size: 11px;
+}
+.freestyle-lab .lesson-toolbar {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: end;
+  column-gap: 12px;
+}
+.freestyle-lab .lesson-toolbar .tech-tabs {
+  grid-column: 1/-1;
+  grid-row: 2;
+}
+.freestyle-lab .lesson-toolbar .lesson-actions {
+  grid-column: 2;
+  grid-row: 1;
+}
+.freestyle-lab .lesson-toolbar .lesson-actions button {
+  min-height: 34px;
+  padding: 5px 12px;
+  font-size: 12px;
+}
+@media (max-width: 600px) {
+  .freestyle-lab .lesson-toolbar {
+    display: block;
+  }
+  .ski-sim .freestyle-lab .lesson-toolbar .tech-tabs {
+    margin-bottom: 8px;
+  }
+  .freestyle-lab .lesson-toolbar .lesson-actions {
+    margin-bottom: 12px;
+  }
+  .freestyle-lab .lesson-toolbar .lesson-actions button {
+    flex: auto;
+  }
+}
+@media (max-width: 930px) {
+  .game-tools nav a {
+    width: 32px;
+  }
+  .game-tools nav a span {
+    display: none;
+  }
+  .freestyle-lab .lab-grid {
+    grid-template-columns: 1fr 1fr;
+  }
+}
+@media (max-width: 730px) {
+  .freestyle-lab .lab-grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .ski-sim .freestyle-lab .tech-tabs {
+    display: grid;
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+  }
+  .ski-sim .freestyle-lab .tech-tabs button {
+    font-size: 10.5px;
+    padding: 3px;
+  }
+  .trick-study .study-surface {
+    height: 230px;
+  }
+}
+@media (max-width: 650px) {
+  .game-tools nav a {
+    width: 27px;
+  }
+  .trick-hud {
+    top: 202px;
+    width: 165px;
+    padding: 6px 8px;
+  }
+  .trick-hud header strong {
+    font-size: 13px;
+  }
+  .trick-hud header span,
+  .trick-hud footer {
+    font-size: 7px;
+  }
+  .ski-pad button {
+    width: clamp(30px, 8.9vw, 38px);
+  }
+}
+@media (max-height: 580px) and (min-width: 651px) {
+  .trick-hud {
+    top: 139px;
+    width: 188px;
+    padding: 5px 8px;
+  }
+  .trick-hud header strong {
+    font-size: 13px;
+  }
+}
+@media (pointer: coarse) {
+  .trick-hud .key-hint {
+    display: none;
+  }
+  .trick-hud .touch-hint {
+    display: inline;
   }
 }
