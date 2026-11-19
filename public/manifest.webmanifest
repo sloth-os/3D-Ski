@@ -1,0 +1,33 @@
+{
+  "id": "./",
+  "name": "Fallline Ski Simulator",
+  "short_name": "Fallline",
+  "description": "Interactive alpine ski training with offline 3D courses, technique drills, and live telemetry.",
+  "lang": "en",
+  "start_url": "./",
+  "scope": "./",
+  "display": "standalone",
+  "background_color": "#0c1016",
+  "theme_color": "#10151c",
+  "categories": ["sports", "education", "games"],
+  "icons": [
+    {
+      "src": "./icons/icon-192.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "./icons/icon-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "./icons/icon-maskable.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "maskable"
+    }
+  ]
+}
