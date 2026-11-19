@@ -1,5 +1,7 @@
 import {
   courses,
+  equipmentFor,
+  defaultSetup,
   surfaces,
   techniques,
   type Course,
@@ -31,6 +33,7 @@ export type Frame = {
   t: number
   speed: number
   heading: number
+  forceHeading: number
   edge: number
   radius: number
   load: number
@@ -40,6 +43,13 @@ export type Frame = {
   lean: number
   slip: number
   pitch: number
+  edgeRate: number
+  normalAccel: number
+  lateralAccel: number
+  frictionAccel: number
+  dragAccel: number
+  grip: number
+  boardYaw: number
   gatesSeen: number
   gatesHit: number
   turns: number
@@ -59,6 +69,7 @@ export const emptyFrame = (): Frame => ({
   t: 0,
   speed: 0,
   heading: 0,
+  forceHeading: 0,
   edge: 0,
   radius: Infinity,
   load: 50,
@@ -68,6 +79,13 @@ export const emptyFrame = (): Frame => ({
   lean: 0,
   slip: 0,
   pitch: 0,
+  edgeRate: 0,
+  normalAccel: 9.81,
+  lateralAccel: 0,
+  frictionAccel: 0,
+  dragAccel: 0,
+  grip: 0.96,
+  boardYaw: 0,
   gatesSeen: 0,
   gatesHit: 0,
   turns: 0,
@@ -116,6 +134,20 @@ export function lineAt(gates: Gate[], distance: number) {
   )
 }
 
+function edgeLimit(setup: Setup) {
+  switch (setup.technique) {
+    case 'wedge':
+      return 26
+    case 'carve':
+      return 58
+    case 'boardCarve':
+      return 54
+    case 'boardSkid':
+      return 36
+    default:
+      return 46
+  }
+}
 export function step(
   f: Frame,
   input: Input,
@@ -130,34 +162,57 @@ export function step(
   const pitch = pitchAt(course, f.d, f.x)
   f.t += dt
   f.pitch = pitch / radians
+  f.forceHeading = f.heading
   f.tuck = approach(f.tuck, input.tuck && !input.brake ? 1 : 0, 4, dt)
   f.brake = approach(f.brake, input.brake ? 1 : 0, 5, dt)
   f.flex = approach(f.flex, input.flex ? 0.96 : 0.2 + 0.38 * f.tuck, 5, dt)
   const wedge = setup.technique === 'wedge'
-  const maxEdge = wedge ? 26 : setup.technique === 'carve' ? 58 : 46
+  const board = equipmentFor(setup.technique) === 'snowboard'
+  const maxEdge = edgeLimit(setup)
+  const previousEdge = f.edge
   f.edge = approach(
     f.edge,
     clamp(input.steer, -1, 1) * maxEdge * (1 - 0.32 * f.brake),
     2.3 * tech.response,
     dt,
   )
+  f.edgeRate = (f.edge - previousEdge) / dt
   const edge = Math.abs(f.edge) * radians
   const rough =
     surface.roughness * Math.abs(Math.sin(f.d * 0.21)) * (1 - 0.62 * f.flex)
   const effectiveGrip = clamp(surface.grip - rough * 0.17, 0.35, 1)
+  f.grip = effectiveGrip
   const offPiste = clamp((Math.abs(f.x) - 21) / 5, 0, 1)
   f.slip = clamp(
-    (1 - effectiveGrip) * Math.sin(edge) + f.brake * 0.7 + (wedge ? 0.18 : 0),
+    (1 - effectiveGrip) * Math.sin(edge) +
+      f.brake * 0.7 +
+      (wedge
+        ? 0.18
+        : setup.technique === 'boardSkid'
+          ? 0.27 * Math.min(1, Math.abs(f.edge) / 15)
+          : 0),
     0,
     1,
   )
 
   // Gravity along the skis, Coulomb sliding resistance, skidding, and quadratic air drag.
-  const normal = 9.81 * Math.cos(pitch)
+  const dx = 0.55 * Math.sin(f.heading),
+    dd = 0.55 * Math.cos(f.heading)
+  const curvature =
+    (worldHeight(course, f.d + dd, f.x + dx) -
+      2 * worldHeight(course, f.d, f.x) +
+      worldHeight(course, f.d - dd, f.x - dx)) /
+    0.55 ** 2
+  const normal = clamp(
+    9.81 * Math.cos(pitch) + curvature * f.speed * f.speed * Math.cos(pitch),
+    2.5,
+    21,
+  )
+  f.normalAccel = normal
   const resistance =
     normal *
     (surface.friction +
-      f.brake * 0.73 +
+      f.brake * (board ? 0.78 : 0.73) +
       f.slip * 0.12 +
       offPiste *
         Math.min(
@@ -167,9 +222,22 @@ export function step(
   const drag = (0.0093 - 0.004 * f.tuck) * f.speed * f.speed
   const acceleration =
     9.81 * Math.sin(pitch) * Math.cos(f.heading) - resistance - drag
+  const previousSpeed = f.speed
   f.speed = clamp(f.speed + acceleration * dt, 0, 32)
+  f.dragAccel = drag
+  f.frictionAccel = Math.max(
+    0,
+    9.81 * Math.sin(pitch) * Math.cos(f.heading) -
+      drag -
+      (f.speed - previousSpeed) / dt,
+  )
+  const slipSign = Math.sign(f.edge || f.lastSide || 1)
+  f.boardYaw = board
+    ? approach(f.boardYaw, slipSign * (f.brake * 0.86 + f.slip * 0.56), 4.4, dt)
+    : 0
   const cutRadius = tech.sidecut * Math.cos(edge)
-  const engagement = Math.sin(edge) * (wedge ? 2.05 : 1.5) * effectiveGrip
+  const engagement =
+    Math.sin(edge) * (wedge ? 2.05 : board ? 0.88 : 1.5) * effectiveGrip
   const edgeRate = (Math.sign(f.edge) * f.speed * engagement) / cutRadius
   const gravityRate =
     (-Math.sin(f.heading) * 9.81 * Math.sin(pitch)) / Math.max(f.speed, 3)
@@ -185,7 +253,8 @@ export function step(
     Math.abs(yawRate) > 0.012 && f.speed > 0.2
       ? Math.abs(f.speed / yawRate)
       : Infinity
-  const lateral = Math.abs(f.speed * yawRate)
+  f.lateralAccel = f.speed * yawRate
+  const lateral = Math.abs(f.lateralAccel)
   f.lean = Math.atan2(f.speed * yawRate, normal)
   f.load = clamp(
     50 + (38 * lateral) / (lateral + 3.2) + Math.sin(edge) * 5,
@@ -236,11 +305,21 @@ export type Sample = {
   load: number
   radius: number
 }
-export function sample(f: Frame): Sample {
+export function frontBindingShare(f: Frame) {
+  return clamp(
+    0.53 + 0.065 * f.tuck - 0.13 * f.brake + 0.038 * Math.tanh(f.edgeRate / 38),
+    0.32,
+    0.68,
+  )
+}
+export function sample(f: Frame, setup: Setup = defaultSetup): Sample {
   return {
     speed: f.speed * 3.6,
     edge: Math.abs(f.edge),
-    load: f.load,
+    load:
+      equipmentFor(setup.technique) === 'snowboard'
+        ? 100 * frontBindingShare(f)
+        : f.load,
     radius: f.radius,
   }
 }
@@ -252,7 +331,7 @@ export function referenceRun(setup: Setup): Sample[] {
     samples: Sample[] = []
   for (let i = 0; i < 646; i++) {
     step(frame, demonstrationInput(frame, setup, gates), setup, gates, 1 / 60)
-    if (i % 8 === 0) samples.push(sample(frame))
+    if (i % 8 === 0) samples.push(sample(frame, setup))
   }
   return samples.slice(-44)
 }
@@ -297,11 +376,14 @@ export function demonstrationInput(
       Math.sin(courses[setup.course].pitch * radians)) /
       Math.max(f.speed, 3)
   const wedge = setup.technique === 'wedge'
+  const board = equipmentFor(setup.technique) === 'snowboard'
   const targetEdge = Math.atan(
     (rate * tech.sidecut) /
-      (Math.max(f.speed, 4) * (wedge ? 2.05 : 1.5) * surface.grip),
+      (Math.max(f.speed, 4) *
+        (wedge ? 2.05 : board ? 0.88 : 1.5) *
+        surface.grip),
   )
-  const maxEdge = wedge ? 26 : setup.technique === 'carve' ? 58 : 46
+  const maxEdge = edgeLimit(setup)
   const steer = clamp(targetEdge / (maxEdge * radians), -1, 1)
   const targetSpeed =
     (wedge ? 8.5 : setup.technique === 'short' ? 11.5 : 13.5) +
@@ -312,4 +394,12 @@ export function demonstrationInput(
     tuck: !wedge && Math.abs(steer) < 0.13,
     brake: f.speed > targetSpeed,
   }
+}
+
+export function referenceFrame(setup: Setup): Frame {
+  const frame = emptyFrame(),
+    gates = buildGates(courses[setup.course])
+  for (let i = 0; i < 646; i++)
+    step(frame, demonstrationInput(frame, setup, gates), setup, gates, 1 / 60)
+  return frame
 }

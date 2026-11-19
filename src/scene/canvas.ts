@@ -1,39 +1,48 @@
-import { courses, type Setup } from '../course.ts'
-import { buildGates, lineAt, clamp } from '../physics.ts'
+import { courses, equipmentFor, type Setup } from '../course.ts'
+import { cameraShot, isTrailhead, type ScreenPoint } from '../cameras.ts'
+import {
+  analyse,
+  riderPose,
+  add3,
+  scale3,
+  magnitude,
+  lensColors,
+  type Point3,
+} from '../analysis.ts'
+import { buildGates, lineAt, radians, worldHeight } from '../physics.ts'
 import type { MountainView } from '../mountain.ts'
 
-// A perspective canvas renderer keeps the course playable on devices without a WebGL context.
+const sub = (a: Point3, b: Point3) => add3(a, scale3(b, -1))
+const unit = (a: Point3) => scale3(a, 1 / (magnitude(a) || 1))
+const dot = (a: Point3, b: Point3) => a[0] * b[0] + a[1] * b[1] + a[2] * b[2]
+const cross = (a: Point3, b: Point3): Point3 => [
+  a[1] * b[2] - a[2] * b[1],
+  a[2] * b[0] - a[0] * b[2],
+  a[0] * b[1] - a[1] * b[0],
+]
 export function canvasMountain(
   container: HTMLElement,
   setup: Setup,
+  study = false,
 ): MountainView {
   const canvas = document.createElement('canvas'),
     ctx = canvas.getContext('2d')!,
-    c = courses[setup.course],
-    gates = buildGates(c)
+    course = courses[setup.course],
+    gates = buildGates(course),
+    board = equipmentFor(setup.technique) === 'snowboard'
+  canvas.dataset.renderer = 'canvas'
   container.appendChild(canvas)
-  const pine = (x: number, y: number, h: number) => {
-    ctx.fillStyle = '#344e50'
-    ctx.fillRect(x - h * 0.035, y - h * 0.36, h * 0.07, h * 0.36)
-    for (let i = 0; i < 4; i++) {
-      const top = y - h * (0.52 + i * 0.16),
-        half = h * (0.24 - i * 0.039)
-      ctx.beginPath()
-      ctx.moveTo(x, top)
-      ctx.lineTo(x + half, top + h * 0.47)
-      ctx.lineTo(x - half, top + h * 0.47)
-      ctx.closePath()
-      ctx.fillStyle = i % 2 ? '#759193' : '#466b69'
-      ctx.fill()
-      ctx.beginPath()
-      ctx.moveTo(x, top)
-      ctx.lineTo(x + half * 0.55, top + h * 0.3)
-      ctx.lineTo(x - half * 0.65, top + h * 0.32)
-      ctx.closePath()
-      ctx.fillStyle = '#c7dce1'
-      ctx.fill()
-    }
-  }
+  const tree = new Image()
+  tree.src = import.meta.env.BASE_URL + 'images/spruce.webp'
+  const pano = new Image()
+  pano.src = import.meta.env.BASE_URL + 'images/glacier-bowl.webp'
+  const at = (x: number, d: number, y = 0): Point3 => [
+    x,
+    worldHeight(course, d, x) + y,
+    -d * Math.cos(course.pitch * radians),
+  ]
+  const tracks: Point3[][] = board ? [[]] : [[], []]
+  let lastDistance = -1
   return {
     draw(f, opt) {
       const w = container.clientWidth,
@@ -43,103 +52,367 @@ export function canvasMountain(
         canvas.height = h
       }
       ctx.clearRect(0, 0, w, h)
-      const horizon = h * 0.34,
-        focal = h * 0.85,
-        back = opt.camera === 'wide' ? 8 : opt.camera === 'first' ? 0.55 : 4.3,
-        eye = opt.camera === 'wide' ? 3.6 : 2.1
-      const proj = (x: number, d: number, y = 0) => {
-        const depth = Math.max(0.2, d - f.d + back)
-        return [
-          w * 0.5 +
-            ((x - f.x - Math.sin(f.heading + opt.orbit) * depth * 0.15) *
-              focal) /
-              depth,
-          horizon + ((eye - y) * focal) / depth,
-          focal / depth,
-        ]
-      }
-      const grad = ctx.createLinearGradient(0, horizon, 0, h)
-      grad.addColorStop(0, '#e5f0f5')
-      grad.addColorStop(1, setup.surface === 'ice' ? '#b6d5e7' : '#f7fbfc')
-      ctx.fillStyle = grad
-      ctx.fillRect(0, horizon, w, h - horizon)
-      for (let j = 44; j >= 0; j--) {
-        const d = (Math.floor(f.d / 5) + j) * 5
-        for (const s of [-1, 1]) {
-          const [x, y, k] = proj(s * (26 + 4 * Math.sin(d * 0.73)), d)
-          pine(x, y, k * (7 + 2 * Math.sin(d * 0.82)))
+      const plate = isTrailhead(opt) && setup.course === 'ridge'
+      container.dataset.plate = plate ? 'on' : 'off'
+      const shot = cameraShot(f, course, opt),
+        pos = at(f.x, f.d),
+        eye = add3(shot.eye, pos)
+      const fw = unit(sub(shot.target, shot.eye)),
+        right = unit(cross(fw, [0, 1, 0])),
+        up = unit(cross(right, fw)),
+        focal = (0.5 * h) / Math.tan((shot.fov * radians) / 2)
+      function project(p: Point3) {
+        const rel = sub(p, eye),
+          depth = dot(rel, fw),
+          k = focal / Math.max(0.04, depth)
+        return {
+          x: w / 2 + dot(rel, right) * k,
+          y: h / 2 - dot(rel, up) * k,
+          k,
+          depth,
         }
       }
-      if (opt.line) {
-        ctx.setLineDash([4, 5])
-        ctx.strokeStyle = '#239f91'
-        ctx.lineWidth = 2
+      function screen(p: Point3): ScreenPoint {
+        const v = project(p)
+        return {
+          x: v.x / w,
+          y: v.y / h,
+          visible:
+            v.depth > 0.05 && v.x > 3 && v.y > 3 && v.x < w - 3 && v.y < h - 3,
+        }
+      }
+      function stroke(a: Point3, b: Point3, color: string, width: number) {
+        const s = project(a),
+          e = project(b)
+        if (s.depth < 0.06 || e.depth < 0.06) return
         ctx.beginPath()
-        for (let i = 80; i >= 0; i--) {
-          const d = f.d + i * 1.5
-          const [x, y] = proj(lineAt(gates, d), d)
-          if (i === 80) ctx.moveTo(x, y)
-          else ctx.lineTo(x, y)
-        }
-        ctx.stroke()
-        ctx.setLineDash([])
-      }
-      for (const [i, g] of [...gates].entries()) {
-        if (g.d < f.d - 1 || g.d > f.d + 210) continue
-        for (const s of [-1, 1]) {
-          const [x, y, k] = proj(g.x + s * g.width, g.d)
-          ctx.fillStyle = i % 2 ? '#3376bd' : '#d84b37'
-          ctx.fillRect(x, y - k * 2, k * 0.07, k * 2)
-          ctx.fillRect(x - (s < 0 ? k : 0), y - k * 1.9, k, k * 0.5)
-        }
-      }
-      if (opt.camera !== 'first') {
-        const [x, y] = proj(f.x, f.d),
-          scale = h / (opt.camera === 'wide' ? 420 : 275)
-        ctx.save()
-        ctx.translate(x, y)
-        ctx.scale(scale, scale)
-        ctx.strokeStyle = '#283947'
-        ctx.lineWidth = 3
-        for (const s of [-1, 1]) {
-          ctx.beginPath()
-          ctx.moveTo(s * 9, 3)
-          ctx.lineTo(s * 5, -15)
-          ctx.stroke()
-        }
-        ctx.rotate(-clamp(f.lean, -0.65, 0.65))
+        ctx.moveTo(s.x, s.y)
+        ctx.lineTo(e.x, e.y)
+        ctx.lineWidth = Math.max(0.65, width * (s.k + e.k) * 0.5)
+        ctx.strokeStyle = color
         ctx.lineCap = 'round'
-        ctx.lineWidth = 8
-        for (const s of [-1, 1]) {
-          ctx.beginPath()
-          ctx.moveTo(s * 4, -22)
-          ctx.lineTo(s * 8, -5)
-          ctx.stroke()
-        }
-        ctx.strokeStyle = '#ed721e'
-        ctx.lineWidth = 15
-        ctx.beginPath()
-        ctx.moveTo(0, -24)
-        ctx.lineTo(1, -39 + f.flex * 4)
         ctx.stroke()
-        ctx.fillStyle = '#1c2a38'
+      }
+      function ball(p: Point3, r: number, color: string) {
+        const v = project(p)
+        if (v.depth < 0.07) return
+        ctx.fillStyle = color
         ctx.beginPath()
-        ctx.arc(1, -48 + f.flex * 4, 6.5, 0, Math.PI * 2)
+        ctx.arc(v.x, v.y, r * v.k, 0, Math.PI * 2)
         ctx.fill()
-        if (opt.forces) {
-          ctx.strokeStyle = '#16bda8'
-          ctx.lineWidth = 2
+      }
+      const arrow = (p: Point3, force: Point3, color: string) => {
+        const end = add3(p, scale3(force, 1.39 / (75 * 9.81)))
+        stroke(p, end, color, 0.012)
+        const a = project(p),
+          b = project(end)
+        if (a.depth > 0.06 && b.depth > 0.06) {
+          const angle = Math.atan2(b.y - a.y, b.x - a.x),
+            length = Math.min(13, Math.hypot(b.x - a.x, b.y - a.y) * 0.35)
+          ctx.fillStyle = color
           ctx.beginPath()
-          ctx.moveTo(0, -3)
-          ctx.lineTo(0, -60)
-          ctx.stroke()
-          ctx.strokeStyle = '#e7a035'
-          ctx.beginPath()
-          ctx.moveTo(16, -35)
-          ctx.lineTo(16, -8)
-          ctx.stroke()
+          ctx.moveTo(b.x, b.y)
+          for (const s of [-1, 1])
+            ctx.lineTo(
+              b.x - length * Math.cos(angle + s * 0.35),
+              b.y - length * Math.sin(angle + s * 0.35),
+            )
+          ctx.fill()
         }
-        ctx.restore()
+        return end
+      }
+      const pitch = (f.pitch || course.pitch) * radians,
+        yaw = -f.heading - f.boardYaw
+      function local(p: Point3): Point3 {
+        const x = p[0] * Math.cos(yaw) + p[2] * Math.sin(yaw),
+          z = -p[0] * Math.sin(yaw) + p[2] * Math.cos(yaw)
+        return add3(pos, [
+          x,
+          p[1] * Math.cos(pitch) + z * Math.sin(pitch),
+          -p[1] * Math.sin(pitch) + z * Math.cos(pitch),
+        ])
+      }
+      if (study) {
+        ctx.fillStyle = '#243941'
+        ctx.fillRect(0, 0, w, h)
+        for (let i = -12; i <= 12; i++) {
+          stroke(at(i * 0.25, f.d - 3), at(i * 0.25, f.d + 3), '#456169', 0.008)
+          stroke(
+            at(-3, f.d + i * 0.25),
+            at(3, f.d + i * 0.25),
+            '#456169',
+            0.008,
+          )
+        }
+      } else if (!plate) {
+        ctx.fillStyle = '#91b8d5'
+        ctx.fillRect(0, 0, w, h)
+        if (pano.complete && pano.naturalWidth)
+          ctx.drawImage(pano, 0, 0, w, h * 0.67)
+        const normal: Point3 = [0, Math.cos(pitch), -Math.sin(pitch)]
+        const horizon = (x: number) =>
+          h * 0.5 +
+          (focal * dot(normal, fw) + (x - w * 0.5) * dot(normal, right)) /
+            Math.max(0.015, dot(normal, up))
+        const grad = ctx.createLinearGradient(0, 0, 0, h)
+        grad.addColorStop(0, '#d2e1e9')
+        grad.addColorStop(1, setup.surface === 'ice' ? '#b5d1e0' : '#f5f2ed')
+        ctx.fillStyle = grad
+        ctx.beginPath()
+        ctx.moveTo(0, horizon(0))
+        ctx.lineTo(w, horizon(w))
+        ctx.lineTo(w, h)
+        ctx.lineTo(0, h)
+        ctx.fill()
+        if (f.d < lastDistance) {
+          lastDistance = -1
+          tracks.forEach((track) => (track.length = 0))
+        }
+        if (f.d - lastDistance > 0.28) {
+          tracks.forEach((track, i) => {
+            const offset = board ? 0 : i ? 0.192 : -0.192
+            track.push(
+              at(
+                f.x + Math.cos(f.heading) * offset,
+                f.d - Math.sin(f.heading) * offset,
+                0.021,
+              ),
+            )
+            if (track.length > 280) track.shift()
+          })
+          lastDistance = f.d
+        }
+        tracks.forEach((track) => {
+          for (let i = 1; i < track.length; i++)
+            stroke(track[i - 1], track[i], '#90a7b473', board ? 0.15 : 0.046)
+        })
+        const objects: { depth: number; draw: () => void }[] = []
+        for (
+          let d = Math.max(-32, Math.floor((f.d - 55) / 6) * 6);
+          d < Math.min(course.length + 50, f.d + 190);
+          d += 6
+        ) {
+          for (const s of [-1, 1]) {
+            const x =
+                s * (27 + Math.sin(d * 0.26) * 3 + Math.cos(d * 0.12) * 2),
+              v = project(at(x, d))
+            if (v.depth < 2 || v.x < -h || v.x > w + h) continue
+            const height = (7 + 2 * Math.sin(d * 0.7)) * v.k
+            objects.push({
+              depth: v.depth,
+              draw: () => {
+                if (tree.complete && tree.naturalWidth)
+                  ctx.drawImage(
+                    tree,
+                    v.x - height * 0.31,
+                    v.y - height,
+                    height * 0.62,
+                    height,
+                  )
+              },
+            })
+          }
+        }
+        gates.forEach((g, i) => {
+          for (const side of [-1, 1]) {
+            const x = g.x + side * g.width,
+              base = at(x, g.d),
+              v = project(base)
+            if (v.depth < 1) continue
+            objects.push({
+              depth: v.depth,
+              draw: () => {
+                const col = i % 2 ? '#3774ac' : '#cf6249'
+                stroke(base, at(x, g.d, 2), col, 0.064)
+                stroke(
+                  at(x, g.d, 1.63),
+                  at(x + side * 1.01, g.d, 1.63),
+                  col,
+                  0.4,
+                )
+              },
+            })
+          }
+        })
+        objects.sort((a, b) => b.depth - a.depth).forEach((o) => o.draw())
+        if (opt.line) {
+          for (
+            let d = Math.max(0, f.d - 5);
+            d < Math.min(course.length, f.d + 135);
+            d += 2.8
+          )
+            stroke(
+              at(lineAt(gates, d), d, 0.038),
+              at(lineAt(gates, d + 1.4), d + 1.4, 0.038),
+              '#57a48c',
+              0.052,
+            )
+        }
+      }
+      const p = riderPose(f, setup),
+        a = analyse(f, setup),
+        com = local(p.com)
+      const shadow = project(pos)
+      if (shadow.depth > 0.4 && opt.camera !== 'first') {
+        ctx.fillStyle = '#42566940'
+        ctx.beginPath()
+        ctx.ellipse(
+          shadow.x + shadow.k * 0.15,
+          shadow.y,
+          shadow.k * 0.43,
+          shadow.k * 0.085,
+          -0.16,
+          0,
+          Math.PI * 2,
+        )
+        ctx.fill()
+      }
+      for (const leg of p.legs) {
+        if (board && leg.side === 1) continue
+        const base = board ? 0 : leg.side * (0.196 + 0.065 * f.brake),
+          edge = f.edge * radians
+        const half = board ? 0.15 : 0.062,
+          lift = 0.031 + half * Math.abs(Math.sin(edge))
+        const toe = board
+          ? 0
+          : leg.side *
+            ((setup.technique === 'wedge' ? 0.18 : 0.008) + f.brake * 0.33)
+        const deck = (s: number, z: number, y = 0): Point3 => {
+          const across = s * half
+          return local([
+            base + across * Math.cos(edge) + Math.sin(toe) * z,
+            lift - across * Math.sin(edge) + y,
+            Math.cos(toe) * z + (board ? 0 : leg.ankle[2]),
+          ])
+        }
+        const vertices = (ring: number[][], color: string) => {
+          const points = ring.map(([x, z, y]) => project(deck(x, z, y)))
+          if (points.some((q) => q.depth < 0.06)) return
+          ctx.fillStyle = color
+          ctx.beginPath()
+          points.forEach((q, i) =>
+            i ? ctx.lineTo(q.x, q.y) : ctx.moveTo(q.x, q.y),
+          )
+          ctx.closePath()
+          ctx.fill()
+        }
+        const len = board ? 0.82 : 0.93
+        vertices(
+          [
+            [0, -len, 0.09],
+            [1, -len * 0.88, 0.045],
+            [0.75, 0, 0],
+            [1, len * 0.8, 0.02],
+            [0.4, len * 0.95, 0.047],
+            [-0.4, len * 0.95, 0.047],
+            [-1, len * 0.8, 0.02],
+            [-0.75, 0, 0],
+            [-1, -len * 0.88, 0.045],
+          ],
+          '#24373b',
+        )
+        vertices(
+          [
+            [0, -len, 0.092],
+            [1, -len * 0.88, 0.047],
+            [0.92, -len * 0.65, 0.01],
+            [-0.95, -len * 0.52, 0.008],
+            [-1, -len * 0.88, 0.047],
+          ],
+          '#d0ee99',
+        )
+        stroke(
+          deck(-0.83, len * 0.63, 0.017),
+          deck(0.85, len * 0.54, 0.014),
+          '#bbda93',
+          0.032,
+        )
+      }
+      const torso = (v: Point3) =>
+        local(
+          add3(p.base, [
+            Math.cos(p.yaw) * v[0] +
+              Math.sin(p.yaw) * v[2] +
+              p.lean * v[1] * 0.32,
+            v[1],
+            -Math.sin(p.yaw) * v[0] +
+              Math.cos(p.yaw) * v[2] -
+              0.22 * v[1] -
+              f.tuck * v[1] * 0.29,
+          ]),
+        )
+      if (opt.camera !== 'first') {
+        for (const l of p.legs) {
+          stroke(local(l.hip), local(l.knee), '#273744', 0.212)
+          stroke(local(l.knee), local(l.ankle), '#23313c', 0.17)
+          ball(local(l.ankle), 0.081, '#24333b')
+        }
+        stroke(torso([0, 0.023, 0]), torso([0, 0.41, 0]), '#da652c', 0.39)
+        stroke(
+          torso([0, 0.14, 0.085]),
+          torso([0, 0.37, 0.09]),
+          '#39443a',
+          0.195,
+        )
+        for (const s of [-1, 1]) {
+          const hand = torso([s * (board ? 0.51 : 0.4), 0.11, -0.21])
+          stroke(
+            torso([s * 0.19, 0.4, 0]),
+            torso([s * 0.32, 0.22, -0.015]),
+            '#de6d33',
+            0.152,
+          )
+          stroke(torso([s * 0.32, 0.22, -0.015]), hand, '#c2552d', 0.118)
+          ball(hand, 0.061, '#1c292e')
+          if (!board)
+            stroke(hand, local([s * 0.62, 0.065, 0.39]), '#586975', 0.013)
+        }
+        ball(torso([0, 0.58, -0.06]), 0.125, '#253238')
+        ball(torso([0, 0.683, -0.05]), 0.151, '#26343d')
+      }
+      let upper = com,
+        lower = local(p.legs[p.outside].knee)
+      if (opt.forces && opt.lens === 'forces') {
+        const weighted = add3(
+          scale3(p.legs[0].contact, a.firstShare),
+          scale3(p.legs[1].contact, 1 - a.firstShare),
+        )
+        upper = arrow(local(weighted), a.reaction, lensColors.support)
+        arrow(com, a.weight, lensColors.gravity)
+        arrow(com, a.drag, lensColors.drag)
+        lower = com
+      }
+      if (opt.lens === 'body' && opt.forces) {
+        for (const l of p.legs) {
+          stroke(local(l.hip), local(l.knee), lensColors.body, 0.013)
+          stroke(local(l.knee), local(l.ankle), lensColors.body, 0.013)
+          ball(local(l.knee), 0.025, '#f6f2ff')
+        }
+        ball(com, 0.032, lensColors.body)
+      }
+      if (opt.lens === 'contact') {
+        upper = local(p.legs[0].contact)
+        lower = local(p.legs[1].contact)
+        if (opt.forces)
+          [upper, lower].forEach((v, i) => {
+            ball(v, 0.04, lensColors.support)
+            arrow(
+              v,
+              scale3(a.normal, a.contacts[i]),
+              i ? lensColors.drag : lensColors.support,
+            )
+          })
+      }
+      const gate = gates[f.gatesSeen],
+        target = gate
+          ? screen(at(gate.x, gate.d, 2.3))
+          : { x: 0, y: 0, visible: false }
+      if (plate || !opt.line) target.visible = false
+      return {
+        upper: screen(upper),
+        lower: screen(lower),
+        gate: target,
+        bearing: (320 + Math.atan2(fw[0], -fw[2]) / radians + 360) % 360,
       }
     },
     dispose() {

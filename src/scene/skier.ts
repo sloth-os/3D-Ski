@@ -1,213 +1,363 @@
 import * as THREE from 'three'
-import type { Setup } from '../course.ts'
+import { equipmentFor, type Setup } from '../course.ts'
 import { clamp, radians, type Frame } from '../physics.ts'
+import { type RiderPose, type Point3 } from '../analysis.ts'
+import { makeDeck } from './equipment.ts'
 
-export function skierModel() {
-  const root = new THREE.Group(),
-    legs = new THREE.Group(),
-    body = new THREE.Group()
-  const mat = (color: number, roughness = 0.75) =>
-    new THREE.MeshStandardMaterial({ color, roughness })
-  const orange = mat(0xf16a17),
-    dark = mat(0x192738),
-    boots = mat(0x2b3843),
-    black = mat(0x15202c),
-    cuff = mat(0x913815),
-    green = mat(0x58e0bf, 0.36),
-    visor = mat(0x288392, 0.2),
-    poleMetal = mat(0x667a87, 0.28)
-  const sphere = new THREE.SphereGeometry(1, 16, 12)
-  const ellipsoid = (
-    parent: THREE.Object3D,
-    material: THREE.Material,
-    xyz: number[],
-    scale: number[],
-  ) => {
-    const m = new THREE.Mesh(sphere, material)
-    m.position.set(xyz[0], xyz[1], xyz[2])
-    m.scale.set(scale[0], scale[1], scale[2])
-    m.castShadow = true
-    parent.add(m)
-    return m
+function shellTexture() {
+  const canvas = document.createElement('canvas')
+  canvas.width = 512
+  canvas.height = 512
+  const ctx = canvas.getContext('2d')!,
+    img = ctx.createImageData(512, 512)
+  for (let y = 0; y < 512; y++)
+    for (let x = 0; x < 512; x++) {
+      const u = (x / 512) * Math.PI * 2,
+        v = y / 512
+      const creases =
+        Math.max(0, Math.sin(v * 53 + 2.5 * Math.sin(u * 2 + v * 6))) ** 13
+      const weave =
+        (x % 5 === 0 || y % 5 === 0 ? -3 : 0) + Math.sin(x * 51.7 + y * 13) * 2
+      const shade =
+        1 -
+        0.065 * creases -
+        0.055 * Math.cos(u * 2 + 0.6) * Math.sin(v * Math.PI)
+      img.data.set(
+        [231 * shade + weave, 99 * shade + weave, 37 * shade + weave, 255],
+        (y * 512 + x) * 4,
+      )
+    }
+  ctx.putImageData(img, 0, 0)
+  ctx.strokeStyle = 'rgba(101,41,28,.52)'
+  ctx.lineWidth = 2
+  for (const x of [38, 227, 285, 474]) {
+    ctx.beginPath()
+    ctx.moveTo(x, 50)
+    ctx.bezierCurveTo(x + 20, 135, x - 15, 320, x + 4, 500)
+    ctx.stroke()
   }
-  const up = new THREE.Vector3(0, 1, 0)
-  function limb(
+  ctx.beginPath()
+  ctx.moveTo(0, 119)
+  ctx.bezierCurveTo(98, 157, 186, 84, 256, 108)
+  ctx.bezierCurveTo(334, 88, 428, 155, 512, 119)
+  ctx.stroke()
+  const t = new THREE.CanvasTexture(canvas)
+  t.colorSpace = THREE.SRGBColorSpace
+  t.wrapS = THREE.RepeatWrapping
+  t.anisotropy = 4
+  return t
+}
+export function skierModel(setup: Setup) {
+  const board = equipmentFor(setup.technique) === 'snowboard'
+  const root = new THREE.Group(),
+    upper = new THREE.Group(),
+    hips = new THREE.Group(),
+    head = new THREE.Group(),
+    legGroup = new THREE.Group()
+  root.add(upper, hips, legGroup)
+  upper.add(head)
+  const mat = (color: number, roughness = 0.77, metalness = 0) =>
+    new THREE.MeshStandardMaterial({ color, roughness, metalness })
+  const orange = mat(0xe56b2a),
+    sleeve = mat(0xcf5423),
+    seam = mat(0xa94324),
+    fabric = mat(0xffffff)
+  fabric.map = shellTexture()
+  const pants = mat(0x243441),
+    kneepad = mat(0x2d414b),
+    boot = mat(0x222c32, 0.41),
+    sole = mat(0x121b20),
+    metal = mat(0xa6b0ae, 0.31, 0.65),
+    mint = mat(0xb3d792, 0.49)
+  const sphere = new THREE.SphereGeometry(1, 24, 18),
+    up = new THREE.Vector3(0, 1, 0)
+  const bulb = (
+    parent: THREE.Object3D,
+    m: THREE.Material,
+    p: Point3,
+    s: Point3,
+  ) => {
+    const mesh = new THREE.Mesh(sphere, m)
+    mesh.position.fromArray(p)
+    mesh.scale.fromArray(s)
+    mesh.castShadow = true
+    parent.add(mesh)
+    return mesh
+  }
+  const block = (
+    parent: THREE.Object3D,
+    m: THREE.Material,
+    p: Point3,
+    s: Point3,
+  ) => {
+    const mesh = new THREE.Mesh(new THREE.BoxGeometry(...s), m)
+    mesh.position.fromArray(p)
+    mesh.castShadow = true
+    parent.add(mesh)
+    return mesh
+  }
+  function loft(
     parent: THREE.Group,
     material: THREE.Material,
-    radius: number,
-    toRadius = radius,
+    rings: number[][],
+    depth: number,
   ) {
-    const piece = new THREE.Mesh(
-      new THREE.CylinderGeometry(toRadius, radius, 1, 12),
-      material,
+    const geo = new THREE.LatheGeometry(
+      rings.map(([y, r]) => new THREE.Vector2(r, y)),
+      32,
     )
-    piece.castShadow = true
-    parent.add(piece)
-    const v = new THREE.Vector3(),
+    const mesh = new THREE.Mesh(geo, material)
+    mesh.scale.z = depth
+    mesh.castShadow = true
+    parent.add(mesh)
+    return mesh
+  }
+  function link(
+    parent: THREE.Group,
+    material: THREE.Material,
+    r1: number,
+    r2: number,
+    soft = true,
+  ) {
+    const rings = soft
+      ? [
+          [0, r1 * 0.62],
+          [0.07, r1 * 0.94],
+          [0.21, r1],
+          [0.48, (r1 + r2) * 0.51],
+          [0.58, (r1 + r2) * 0.48],
+          [0.63, (r1 + r2) * 0.506],
+          [0.84, r2 * 1.04],
+          [0.98, r2 * 0.9],
+          [1, r2 * 0.65],
+        ]
+      : [
+          [0, r1],
+          [1, r2],
+        ]
+    const mesh = loft(parent, material, rings, 0.94),
       a = new THREE.Vector3(),
       b = new THREE.Vector3()
-    return (from: number[], to: number[]) => {
+    return (from: Point3, to: Point3) => {
       a.fromArray(from)
-      b.fromArray(to)
-      v.subVectors(b, a)
-      piece.position.addVectors(a, b).multiplyScalar(0.5)
-      piece.scale.y = v.length()
-      piece.quaternion.setFromUnitVectors(up, v.normalize())
+      b.fromArray(to).sub(a)
+      mesh.position.copy(a)
+      mesh.scale.y = b.length()
+      mesh.quaternion.setFromUnitVectors(up, b.normalize())
     }
   }
-  root.add(legs, body)
-  // A tapered jacket, articulated limbs, and independent skis make the edge change visible from behind.
-  const jacketShape = [
-    [0.17, 0.015],
-    [0.214, 0.04],
-    [0.221, 0.14],
-    [0.235, 0.32],
-    [0.264, 0.43],
-    [0.235, 0.498],
-    [0.145, 0.555],
-    [0.098, 0.57],
-  ]
-  const jacket = new THREE.Mesh(
-    new THREE.LatheGeometry(
-      jacketShape.map(([x, y]) => new THREE.Vector2(x, y)),
-      24,
-    ),
-    orange,
+  const jacket = loft(
+    upper,
+    fabric,
+    [
+      [-0.062, 0.177],
+      [-0.043, 0.207],
+      [0, 0.218],
+      [0.045, 0.214],
+      [0.09, 0.219],
+      [0.126, 0.21],
+      [0.24, 0.213],
+      [0.34, 0.242],
+      [0.406, 0.266],
+      [0.438, 0.256],
+      [0.493, 0.202],
+      [0.522, 0.132],
+      [0.54, 0.102],
+    ],
+    0.733,
   )
-  jacket.castShadow = true
-  jacket.scale.z = 0.72
-  jacket.rotation.x = -0.17
-  body.add(jacket)
-  const yoke = ellipsoid(
-    body,
-    mat(0xc95217),
-    [0, 0.421, 0.038],
-    [0.237, 0.095, 0.122],
+  jacket.rotation.x = -0.09
+  bulb(upper, seam, [0, 0.475, 0.05], [0.173, 0.113, 0.14])
+  bulb(upper, orange, [0, 0.505, 0.056], [0.169, 0.111, 0.134])
+  bulb(hips, pants, [0, -0.005, 0.024], [0.205, 0.133, 0.14])
+  // The back panel, structured shoulder straps, webbing and buckles stay attached to the torso.
+  const pack = new THREE.Group()
+  upper.add(pack)
+  pack.position.set(0, 0.27, 0.136)
+  pack.rotation.x = -0.14
+  bulb(pack, mat(0x26332f), [0, 0, 0.029], [0.147, 0.214, 0.073])
+  bulb(pack, mat(0x374337), [0, -0.02, 0.06], [0.128, 0.164, 0.057])
+  for (const side of [-1, 1]) {
+    const strap = bulb(
+      upper,
+      mat(0x313b37),
+      [side * 0.161, 0.325, 0.109],
+      [0.024, 0.18, 0.031],
+    )
+    strap.rotation.z = side * 0.13
+    const front = bulb(
+      upper,
+      sole,
+      [side * 0.146, 0.318, -0.132],
+      [0.024, 0.174, 0.023],
+    )
+    front.rotation.z = -side * 0.16
+    const stripe = block(
+      pack,
+      seam,
+      [side * 0.095, -0.072, 0.101],
+      [0.012, 0.13, 0.01],
+    )
+    stripe.rotation.z = side * 0.32
+    block(pack, metal, [side * 0.119, 0.056, 0.085], [0.027, 0.016, 0.018])
+  }
+  block(pack, mint, [0, 0.096, 0.094], [0.045, 0.014, 0.009])
+  head.position.set(0, 0.642, -0.082)
+  bulb(head, sole, [0, -0.066, -0.019], [0.108, 0.118, 0.107])
+  bulb(head, mat(0x283740, 0.42), [0, 0.043, 0.006], [0.151, 0.156, 0.151])
+  bulb(head, mat(0x17262d, 0.5), [0, 0.027, 0.005], [0.155, 0.034, 0.155])
+  bulb(head, mat(0x293842, 0.31), [0, 0.037, -0.087], [0.145, 0.072, 0.103])
+  const lens = bulb(
+    head,
+    mat(0x73abb4, 0.18, 0.62),
+    [0, 0.04, -0.107],
+    [0.137, 0.062, 0.091],
   )
-  yoke.rotation.x = -0.17
-  for (const s of [-1, 1]) {
-    const seam = ellipsoid(
-      body,
-      cuff,
-      [s * 0.178, 0.22, 0.092],
-      [0.011, 0.148, 0.014],
-    )
-    seam.rotation.z = -s * 0.13
+  lens.rotation.x = -0.08
+  for (const side of [-1, 1]) {
+    bulb(head, sole, [side * 0.137, -0.028, 0.017], [0.026, 0.067, 0.054])
+    bulb(head, sole, [side * 0.054, 0.174, -0.005], [0.016, 0.008, 0.045])
   }
-  ellipsoid(body, mat(0xf2974d), [-0.045, 0.395, 0.157], [0.036, 0.009, 0.006])
-  ellipsoid(body, cuff, [0, 0.061, 0.02], [0.227, 0.095, 0.153])
-  ellipsoid(body, cuff, [0, 0.517, 0.084], [0.178, 0.094, 0.141])
-  ellipsoid(body, orange, [0, 0.546, 0.068], [0.176, 0.096, 0.132])
-  ellipsoid(body, black, [0, 0.718, -0.095], [0.168, 0.183, 0.163])
-  ellipsoid(body, boots, [0, 0.712, -0.09], [0.172, 0.038, 0.165])
-  for (const s of [-1, 1]) {
-    const vent = ellipsoid(
-      body,
-      mat(0x465362),
-      [s * 0.065, 0.848, -0.043],
-      [0.017, 0.013, 0.062],
-    )
-    vent.rotation.z = s * 0.22
+  const sharedBoard = board ? new THREE.Group() : null
+  if (sharedBoard) {
+    root.add(sharedBoard)
+    sharedBoard.add(makeDeck(true, 1))
   }
-  ellipsoid(body, mat(0x77828a), [0, 0.718, 0.074], [0.048, 0.015, 0.007])
-  ellipsoid(body, visor, [0, 0.712, -0.164], [0.157, 0.066, 0.122])
-  ellipsoid(body, black, [0, 0.61, -0.113], [0.115, 0.085, 0.118])
-  ellipsoid(body, dark, [0, 0.0, 0], [0.21, 0.16, 0.152])
-  const parts = [-1, 1].map((side) => {
-    ellipsoid(body, orange, [side * 0.22, 0.443, -0.061], [0.106, 0.105, 0.105])
-    const ski = new THREE.Group()
-    root.add(ski)
-    const shape = new THREE.Shape()
-    shape.moveTo(0, -1.07)
-    shape.quadraticCurveTo(0.073, -1.04, 0.074, -0.81)
-    shape.lineTo(0.047, 0.02)
-    shape.lineTo(0.067, 0.79)
-    shape.quadraticCurveTo(0.0, 0.88, -0.067, 0.79)
-    shape.lineTo(-0.047, 0.02)
-    shape.lineTo(-0.074, -0.81)
-    shape.quadraticCurveTo(-0.073, -1.04, 0, -1.07)
-    const skiG = new THREE.ExtrudeGeometry(shape, {
-      depth: 0.018,
-      bevelEnabled: false,
-      curveSegments: 6,
-    })
-    skiG.rotateX(Math.PI / 2)
-    const positions = skiG.getAttribute('position')
-    for (let i = 0; i < positions.count; i++) {
-      const z = positions.getZ(i)
-      positions.setY(
-        i,
-        positions.getY(i) +
-          Math.max(0, -z - 0.74) ** 2 * 1.05 +
-          Math.max(0, z - 0.68) ** 2 * 0.9,
-      )
+  const limbs = ([-1, 1] as const).map((side) => {
+    const platform = new THREE.Group(),
+      foot = new THREE.Group()
+    if (sharedBoard) {
+      sharedBoard.add(foot)
+      foot.position.z = side * 0.28
+      foot.rotation.y = side < 0 ? -1.27 : -1.71
+    } else {
+      root.add(platform)
+      platform.add(makeDeck(false, side))
+      platform.add(foot)
     }
-    skiG.computeVertexNormals()
-    ski.add(new THREE.Mesh(skiG, black))
-    for (const z of [-0.69, 0.61]) {
-      const mark = new THREE.Mesh(
-        new THREE.BoxGeometry(0.105, 0.015, 0.22),
-        green,
+    bulb(foot, sole, [0, 0.045, -0.028], [0.089, 0.043, 0.176])
+    bulb(foot, boot, [0, 0.096, -0.036], [0.085, 0.076, 0.162])
+    bulb(foot, boot, [0, 0.147, 0.023], [0.079, 0.124, 0.085])
+    for (const y of [0.081, 0.141, 0.192]) {
+      const band = bulb(
+        foot,
+        y === 0.192 ? mint : metal,
+        [0, y, -0.025],
+        [0.083, 0.012, y < 0.12 ? 0.122 : 0.086],
       )
-      mark.position.set(0, 0.008, z)
-      ski.add(mark)
+      band.rotation.x = -0.12
     }
-    ellipsoid(ski, boots, [0, 0.13, -0.035], [0.104, 0.19, 0.2])
-    ellipsoid(ski, black, [0, 0.061, -0.038], [0.112, 0.067, 0.226])
-    ellipsoid(ski, green, [0, 0.17, -0.056], [0.105, 0.022, 0.154])
-    ellipsoid(ski, poleMetal, [0, 0.108, -0.115], [0.102, 0.012, 0.108])
+    block(foot, sole, [0, 0.026, 0.168], [0.098, 0.053, 0.076])
+    block(foot, metal, [0, 0.024, -0.192], [0.092, 0.032, 0.081])
+    const shin = link(legGroup, pants, 0.079, 0.119),
+      thigh = link(legGroup, pants, 0.122, 0.142)
+    const knee = bulb(legGroup, kneepad, [0, 0, 0], [0.115, 0.112, 0.116])
+    const shoulder = bulb(
+      upper,
+      orange,
+      [side * 0.222, 0.406, -0.03],
+      [0.106, 0.102, 0.101],
+    )
+    const bicep = link(upper, fabric, 0.103, 0.086),
+      forearm = link(upper, sleeve, 0.088, 0.061),
+      elbow = bulb(upper, sleeve, [0, 0, 0], [0.084, 0.087, 0.084]),
+      glove = bulb(upper, sole, [0, 0, 0], [0.067, 0.088, 0.07])
+    const pole = !board ? link(root, metal, 0.009, 0.006, false) : null
+    const basket = !board
+      ? bulb(root, sole, [0, 0, 0], [0.048, 0.01, 0.047])
+      : null
     return {
       side,
-      ski,
-      shin: limb(legs, dark, 0.099, 0.119),
-      thigh: limb(legs, dark, 0.122, 0.147),
-      knee: ellipsoid(legs, dark, [0, 0, 0], [0.123, 0.127, 0.121]),
-      upper: limb(body, orange, 0.103, 0.087),
-      lower: limb(body, orange, 0.088, 0.068),
-      elbow: ellipsoid(body, orange, [0, 0, 0], [0.091, 0.093, 0.09]),
-      glove: ellipsoid(body, black, [0, 0, 0], [0.073, 0.094, 0.077]),
-      pole: limb(body, poleMetal, 0.011, 0.009),
-      basket: ellipsoid(body, black, [0, 0, 0], [0.048, 0.013, 0.048]),
+      platform,
+      shin,
+      thigh,
+      knee,
+      shoulder,
+      bicep,
+      forearm,
+      elbow,
+      glove,
+      pole,
+      basket,
     }
   })
-  function pose(f: Frame, setup: Setup, first: boolean) {
-    const lean = clamp(f.lean, -0.72, 0.72),
-      bend = f.flex,
-      hip = 0.87 - bend * 0.24,
-      lateral = Math.sin(lean) * 0.48
-    body.position.set(lateral, hip, -0.005 - f.tuck * 0.07)
-    body.rotation.set(-0.11 - f.tuck * 0.41, f.heading * 0.28, -lean * 0.38)
-    body.visible = legs.visible = !first
-    parts.forEach((p) => {
-      const s = p.side
-      p.ski.position.set(
-        s * (0.186 + f.brake * 0.055),
-        0.04,
-        s * Math.sin(lean) * 0.09,
-      )
-      p.ski.rotation.z = -f.edge * radians * 0.85
-      p.ski.rotation.y =
-        s * ((setup.technique === 'wedge' ? 0.18 : 0.012) + f.brake * 0.32)
-      const ankle = [p.ski.position.x, 0.19, p.ski.position.z],
-        knee = [
-          s * 0.166 + lateral * 0.7,
-          hip * 0.56 + 0.05,
-          -0.176 - 0.13 * bend,
-        ],
-        pelvis = [s * 0.125 + lateral, hip, 0.015]
-      p.shin(ankle, knee)
-      p.thigh(knee, pelvis)
-      p.knee.position.fromArray(knee)
-      const shoulder = [s * 0.22, 0.46, -0.056],
-        elbow = [s * (0.358 - 0.076 * f.tuck), 0.24, -0.06],
-        hand = [s * (0.408 - 0.145 * f.tuck), 0.13 + 0.08 * f.tuck, -0.32]
-      p.upper(shoulder, elbow)
-      p.lower(elbow, hand)
-      p.elbow.position.fromArray(elbow)
-      p.glove.position.fromArray(hand)
-      const tip = [s * 0.59, -hip + 0.08, 0.43 + bend * 0.2]
-      p.pole(hand, tip)
-      p.basket.position.set(tip[0], tip[1] + 0.065, tip[2] - 0.041)
+  const handPoint = new THREE.Vector3(),
+    rootInv = new THREE.Matrix4()
+  function pose(f: Frame, p: RiderPose, first: boolean) {
+    upper.visible = hips.visible = legGroup.visible = !first
+    upper.position.fromArray(p.base)
+    hips.position.fromArray(p.base)
+    const yaw =
+      p.yaw +
+      (board ? 0 : 0.035 * Math.sin(f.t * 1.7) * Math.min(1, f.speed / 5))
+    upper.rotation.order = 'YXZ'
+    upper.rotation.set(
+      -0.16 - f.tuck * 0.45 - (board ? 0.13 : 0.03) * p.flex,
+      yaw,
+      -p.lean * 0.36,
+    )
+    hips.rotation.set(0, yaw, -p.lean * 0.13)
+    head.rotation.set(
+      0.085 + 0.18 * f.tuck,
+      board ? 0.7 : -f.heading * 0.25,
+      p.lean * 0.13,
+    )
+    const edge = f.edge * radians
+    if (sharedBoard) {
+      sharedBoard.position.y = 0.035 + 0.148 * Math.abs(Math.sin(edge))
+      sharedBoard.rotation.z = -edge
+    }
+    upper.updateWorldMatrix(true, false)
+    rootInv.copy(root.matrixWorld).invert()
+    limbs.forEach((l, i) => {
+      const side = l.side,
+        leg = p.legs[i]
+      if (!board) {
+        l.platform.position.set(
+          side * (0.196 + 0.065 * f.brake),
+          0.031 + 0.064 * Math.abs(Math.sin(edge)),
+          leg.ankle[2],
+        )
+        l.platform.rotation.z = -edge
+        l.platform.rotation.y =
+          side * ((setup.technique === 'wedge' ? 0.18 : 0.008) + f.brake * 0.33)
+      }
+      l.shin(leg.ankle, leg.knee)
+      l.thigh(leg.knee, leg.hip)
+      l.knee.position.fromArray(leg.knee)
+      const plant =
+        clamp((1.15 - (f.t - f.lastTurnTime)) / 1.15, 0, 1) *
+        (side === f.lastSide ? 1 : 0)
+      const swing =
+        0.038 * Math.sin(f.t * 2.05 + side * 1.6) * Math.min(1, f.speed / 6)
+      const elbow: Point3 = [
+        side * (board ? 0.37 : 0.343) - p.lean * 0.047,
+        0.218 + 0.036 * f.tuck,
+        -0.048 + 0.055 * side * p.lean,
+      ]
+      const hand: Point3 = [
+        side * ((board ? 0.55 : 0.399) - 0.11 * f.tuck) - p.lean * 0.043,
+        0.112 + 0.13 * f.tuck + side * p.lean * 0.084 - 0.043 * plant,
+        board ? -0.126 + swing : -0.258 - 0.135 * plant + swing,
+      ]
+      l.bicep([side * 0.218, 0.423, -0.03], elbow)
+      l.forearm(elbow, hand)
+      l.elbow.position.fromArray(elbow)
+      l.glove.position.fromArray(hand)
+      if (l.pole && l.basket) {
+        handPoint
+          .fromArray(hand)
+          .applyMatrix4(upper.matrixWorld)
+          .applyMatrix4(rootInv)
+        const h = handPoint.toArray() as Point3
+        const tip: Point3 = [
+          h[0] + side * (0.135 + 0.075 * plant),
+          0.055 + 0.09 * (1 - plant) + 0.028 * Math.sin(f.t * 2.05 + side),
+          h[2] + 0.57 - 0.72 * plant,
+        ]
+        l.pole(h, tip)
+        l.basket.position.set(tip[0], tip[1] + 0.048, tip[2] - 0.022)
+      }
     })
   }
   return { root, pose }

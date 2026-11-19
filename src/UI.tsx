@@ -19,7 +19,7 @@ export function Brand() {
     <span className="brand">
       <SummitMark className="brand-mark" />
       <span className="brand-type">
-        FALLLINE<span>SKI SIMULATOR</span>
+        FALLLINE<span>ALPINE SIMULATOR</span>
       </span>
     </span>
   )

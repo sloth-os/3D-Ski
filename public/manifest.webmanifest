@@ -1,14 +1,14 @@
 {
   "id": "./",
-  "name": "Fallline Ski Simulator",
+  "name": "Fallline Alpine Simulator",
   "short_name": "Fallline",
-  "description": "Interactive alpine ski training with offline 3D courses, technique drills, and live telemetry.",
+  "description": "Ski and snowboard through offline 3D courses with animated technique studies and force analysis.",
   "lang": "en",
   "start_url": "./",
   "scope": "./",
   "display": "standalone",
-  "background_color": "#0c1016",
-  "theme_color": "#10151c",
+  "background_color": "#17282f",
+  "theme_color": "#17282f",
   "categories": ["sports", "education", "games"],
   "icons": [
     {

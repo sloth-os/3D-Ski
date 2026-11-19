@@ -5,6 +5,8 @@ import {
   demonstrationInput,
   emptyFrame,
   sample,
+  neutralInput,
+  referenceFrame,
   step,
   summarize,
   type Frame,
@@ -22,15 +24,27 @@ export const keyBindings = {
   brake: ['Space'],
 } as const
 export const skiingKeys = new Set<string>(Object.values(keyBindings).flat())
-export function useRun(setup: Setup, sound: boolean, record: (r: Run) => void) {
+export function useRun(
+  setup: Setup,
+  sound: boolean,
+  record: (r: Run) => void,
+  observing: boolean,
+) {
   const [phase, setPhase] = useState<Phase>('preview')
-  const [frame, setFrame] = useState<Frame>(emptyFrame)
+  const covered = useRef(observing)
+  covered.current = observing
+  const reference = useMemo(() => referenceFrame(setup), [setup])
+  const [frame, setFrame] = useState<Frame>(() => ({ ...reference }))
+  const [rate, setRate] = useState(1),
+    rateRef = useRef(1)
+  rateRef.current = rate
+  const lastInput = useRef({ ...neutralInput }),
+    demoOrigin = useRef(false)
   const [samples, setSamples] = useState<Sample[]>([])
-  const current = useRef<Frame>(emptyFrame()),
+  const current = useRef<Frame>({ ...reference }),
     keys = useRef(new Set<string>()),
     state = useRef<Phase>('preview')
-  const draw = useRef<((frame: Frame) => void) | null>(null),
-    ready = useRef(false),
+  const ready = useRef(false),
     audio = useRef(new SkiSound())
   const gates = useMemo(() => buildGates(courses[setup.course]), [setup.course])
   const enabled = useRef(sound)
@@ -44,27 +58,31 @@ export function useRun(setup: Setup, sound: boolean, record: (r: Run) => void) {
   }, [])
   const start = useCallback(
     (demo = false) => {
+      demoOrigin.current = demo
+      lastInput.current = { ...neutralInput }
       current.current = emptyFrame()
       setFrame({ ...current.current })
-      setSamples([sample(current.current)])
+      setSamples([sample(current.current, setup)])
       if (enabled.current) audio.current.enable()
       change(demo ? 'demo' : 'running')
     },
-    [change],
+    [change, setup],
   )
   const pause = useCallback(() => {
-    if (state.current === 'running') change('paused')
-    else if (state.current === 'demo') change('preview')
+    if (state.current === 'running' || state.current === 'demo') {
+      setFrame({ ...current.current })
+      change('paused')
+    }
   }, [change])
   const resume = useCallback(() => {
     if (state.current === 'paused') {
       if (enabled.current) audio.current.enable()
-      change('running')
+      change(demoOrigin.current ? 'demo' : 'running')
     }
   }, [change])
   const end = useCallback(() => {
     if (state.current === 'preview') return
-    if (state.current === 'demo') {
+    if (demoOrigin.current) {
       change('preview')
       return
     }
@@ -88,7 +106,14 @@ export function useRun(setup: Setup, sound: boolean, record: (r: Run) => void) {
     }
   }, [pause])
   useEffect(() => {
-    if (phase !== 'running' && phase !== 'demo') {
+    const study = phase === 'preview'
+    if (study) {
+      current.current = { ...reference }
+      setFrame({ ...reference })
+      setSamples([sample(reference, setup)])
+      audio.current.update(0, 0, false)
+    }
+    if (phase !== 'running' && phase !== 'demo' && !study) {
       audio.current.update(0, 0, false)
       return
     }
@@ -98,12 +123,22 @@ export function useRun(setup: Setup, sound: boolean, record: (r: Run) => void) {
       lastSample = 0
     const loop = (now: number) => {
       if (state.current !== phase) return
-      if (!ready.current) {
+      if (
+        !ready.current ||
+        document.hidden ||
+        (study &&
+          (covered.current ||
+            window.matchMedia('(prefers-reduced-motion: reduce)').matches))
+      ) {
         previous = 0
         id = requestAnimationFrame(loop)
         return
       }
-      acc += previous ? Math.min((now - previous) / 1000, 0.2) : 0
+      acc += previous
+        ? Math.min((now - previous) / 1000, 0.2) *
+          (study ? 0.24 : 1) *
+          rateRef.current
+        : 0
       previous = now
       const k = keys.current,
         down = (action: keyof typeof keyBindings) =>
@@ -116,27 +151,34 @@ export function useRun(setup: Setup, sound: boolean, record: (r: Run) => void) {
       }
       const f = current.current,
         before = f.gatesHit
+      lastInput.current = input
       while (acc >= 1 / 60 && !f.done) {
         step(
           f,
-          phase === 'demo' ? demonstrationInput(f, setup, gates) : input,
+          phase === 'demo' || study
+            ? demonstrationInput(f, setup, gates)
+            : input,
           setup,
           gates,
           1 / 60,
         )
         acc -= 1 / 60
       }
-      draw.current?.(f)
       if (now - lastSample >= 110 || f.done) {
         setFrame({ ...f })
-        setSamples((old) => [...old.slice(-43), sample(f)])
-        audio.current.update(f.speed, f.edge, enabled.current)
+        setSamples((old) => [...old.slice(-43), sample(f, setup)])
+        audio.current.update(f.speed, f.edge, enabled.current && !study)
         lastSample = now
       }
-      if (before !== f.gatesHit && enabled.current) audio.current.gate()
+      if (!study && before !== f.gatesHit && enabled.current)
+        audio.current.gate()
       if (f.done) {
-        end()
-        return
+        if (study) {
+          current.current = { ...reference }
+        } else {
+          end()
+          return
+        }
       }
       id = requestAnimationFrame(loop)
     }
@@ -145,14 +187,33 @@ export function useRun(setup: Setup, sound: boolean, record: (r: Run) => void) {
       cancelAnimationFrame(id)
       audio.current.update(0, 0, false)
     }
-  }, [phase, setup, gates, end])
+  }, [phase, setup, gates, end, reference])
+  const singleStep = () => {
+    if (state.current !== 'paused') return
+    const f = current.current
+    step(
+      f,
+      demoOrigin.current
+        ? demonstrationInput(f, setup, gates)
+        : lastInput.current,
+      setup,
+      gates,
+      1 / 60,
+    )
+    setFrame({ ...f })
+    setSamples((old) => [...old.slice(-43), sample(f, setup)])
+    if (f.done) end()
+  }
   return {
     phase,
     frame,
     samples,
     current,
     keys,
-    draw,
+    rate,
+    setRate,
+    singleStep,
+    automated: demoOrigin.current,
     ready,
     audio,
     gates,

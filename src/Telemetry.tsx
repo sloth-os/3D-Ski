@@ -3,7 +3,6 @@ import {
   Activity,
   Footprints,
   Gauge,
-  Info,
   MoveUpRight,
   RotateCw,
 } from 'lucide-react'
@@ -85,12 +84,12 @@ export function Telemetry({
   samples,
   preview,
   units,
-  about,
+  board,
 }: {
   samples: Sample[]
   preview: boolean
   units: Prefs['units']
-  about: () => void
+  board: boolean
 }) {
   const s = samples.at(-1) ?? { speed: 0, edge: 0, load: 50, radius: Infinity },
     metric = units === 'metric'
@@ -114,7 +113,7 @@ export function Telemetry({
       tint: 'blue',
     },
     {
-      label: 'Outside ski load',
+      label: board ? 'Front binding load' : 'Outside ski load',
       icon: Footprints,
       value: Math.round(s.load).toString(),
       unit: '%',
@@ -141,15 +140,10 @@ export function Telemetry({
           <Activity />
           Live telemetry
         </h2>
-        <button
-          className="reference-badge"
-          onClick={about}
-          title="How telemetry is calculated"
-        >
+        <span className="reference-badge">
           <span className={'data-dot ' + (preview ? '' : 'active')} />
           {preview ? 'Reference run' : 'Session data'}
-          <Info size={12} />
-        </button>
+        </span>
       </div>
       <div className="metric-grid">
         {cards.map((card) => (

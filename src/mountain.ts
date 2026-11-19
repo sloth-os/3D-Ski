@@ -1,277 +1,347 @@
 import * as THREE from 'three'
-import { courses, type Course, type Setup } from './course.ts'
+import { courses, equipmentFor, type Course, type Setup } from './course.ts'
 import {
-  type Frame,
   buildGates,
   lineAt,
   radians,
   worldHeight,
+  type Frame,
 } from './physics.ts'
-
+import { analyse, riderPose } from './analysis.ts'
+import {
+  cameraShot,
+  isTrailhead,
+  type Projection,
+  type ScreenPoint,
+  type ViewOptions,
+} from './cameras.ts'
 import { skierModel } from './scene/skier.ts'
 import { addTerrain, pointAt, zAt } from './scene/terrain.ts'
 import { canvasMountain } from './scene/canvas.ts'
 import { makeSpray } from './scene/spray.ts'
+import { makeLens } from './scene/lens.ts'
 
-export type CameraMode = 'chase' | 'wide' | 'first'
-export type ViewOptions = {
-  camera: CameraMode
-  line: boolean
-  forces: boolean
-  orbit: number
-}
 export type MountainView = {
-  draw(f: Frame, options: ViewOptions): void
+  draw(f: Frame, opt: ViewOptions): Projection
   dispose(): void
 }
 
-function createTrails() {
-  const count = 520,
-    arrays: Float32Array[] = [],
-    lines: THREE.Line[] = []
-  const material = new THREE.LineBasicMaterial({
-    color: 0x8ca9be,
-    transparent: true,
-    opacity: 0.76,
-  })
-  for (let i = 0; i < 2; i++) {
-    const points = new Float32Array(count * 3)
-    const geometry = new THREE.BufferGeometry()
-    geometry.setAttribute(
+function makeTracks(scene: THREE.Scene, course: Course, board: boolean) {
+  const length = 610,
+    count = board ? 1 : 2
+  const tracks = Array.from({ length: count }, () => {
+    const buffer = new Float32Array(length * 6),
+      indices: number[] = []
+    for (let i = 0; i < length - 1; i++) {
+      const a = i * 2
+      indices.push(a, a + 2, a + 1, a + 1, a + 2, a + 3)
+    }
+    const g = new THREE.BufferGeometry()
+    g.setAttribute(
       'position',
-      new THREE.BufferAttribute(points, 3).setUsage(THREE.DynamicDrawUsage),
+      new THREE.BufferAttribute(buffer, 3).setUsage(THREE.DynamicDrawUsage),
     )
-    geometry.setDrawRange(0, 0)
-    const line = new THREE.Line(geometry, material)
-    line.frustumCulled = false
-    arrays.push(points)
-    lines.push(line)
-  }
-  let size = 0,
-    lastD = -1
-  return {
-    lines,
-    update(f: Frame, c: Course) {
-      if (f.d < lastD) {
-        size = 0
-        lastD = -1
+    g.setIndex(indices)
+    g.setDrawRange(0, 0)
+    const m = new THREE.Mesh(
+      g,
+      new THREE.MeshBasicMaterial({
+        color: 0x7694ab,
+        transparent: true,
+        opacity: 0.38,
+        side: THREE.DoubleSide,
+        depthWrite: false,
+        polygonOffset: true,
+        polygonOffsetFactor: -1,
+      }),
+    )
+    m.frustumCulled = false
+    scene.add(m)
+    return { m, g, buffer }
+  })
+  let last = -1,
+    size = 0
+  return (f: Frame, visible: boolean) => {
+    if (f.d < last) {
+      last = -1
+      size = 0
+      tracks.forEach((t) => t.g.setDrawRange(0, 0))
+    }
+    tracks.forEach((t) => (t.m.visible = visible))
+    if (!visible || f.d - last < 0.24) return
+    const index = Math.min(size, length - 1)
+    tracks.forEach(({ buffer, g }, i) => {
+      if (size === length) buffer.copyWithin(0, 6)
+      const width = board ? 0.105 + 0.09 * f.slip : 0.037 + 0.044 * f.slip
+      for (let j = 0; j < 2; j++) {
+        const offset = (board ? 0 : i ? 0.192 : -0.192) + (j - 0.5) * width * 2,
+          x = f.x + Math.cos(f.heading) * offset,
+          d = f.d - Math.sin(f.heading) * offset
+        buffer.set(
+          [x, worldHeight(course, d, x) + 0.031, zAt(course, d)],
+          index * 6 + j * 3,
+        )
       }
-      if (f.d - lastD < 0.38) return
-      const index = Math.min(count - 1, size)
-      lines.forEach((line, i) => {
-        const a = arrays[i],
-          x = f.x + (i ? 0.185 : -0.185) * Math.cos(f.heading)
-        if (size === count) a.copyWithin(0, 3)
-        a[index * 3] = x
-        a[index * 3 + 1] = worldHeight(c, f.d, x) + 0.028
-        a[index * 3 + 2] = zAt(c, f.d)
-        line.geometry.attributes.position.needsUpdate = true
-        line.geometry.setDrawRange(0, index + 1)
-      })
-      size = Math.min(size + 1, count)
-      lastD = f.d
-    },
+      g.attributes.position.needsUpdate = true
+      g.setDrawRange(0, index * 6)
+    })
+    size = Math.min(length, size + 1)
+    last = f.d
   }
 }
-
+function makeStudyFloor(scene: THREE.Scene) {
+  const stage = new THREE.Group()
+  const floor = new THREE.Mesh(
+    new THREE.PlaneGeometry(54, 54),
+    new THREE.MeshStandardMaterial({ color: 0x283e47, roughness: 0.91 }),
+  )
+  floor.rotation.x = -Math.PI / 2
+  floor.receiveShadow = true
+  const grid = new THREE.GridHelper(26, 104, 0x859f9b, 0x416068)
+  grid.position.y = 0.003
+  stage.add(floor, grid)
+  scene.add(stage)
+  return stage
+}
 export function createMountain(
   container: HTMLElement,
   setup: Setup,
+  study = false,
 ): MountainView {
+  const canvas = document.createElement('canvas')
   let renderer: THREE.WebGLRenderer
   try {
-    const canvas = document.createElement('canvas')
-    const options: WebGLContextAttributes = {
-      antialias: true,
+    const params: WebGLContextAttributes = {
       alpha: true,
+      antialias: true,
       depth: true,
       powerPreference: 'high-performance',
     }
-    const context = canvas.getContext('webgl2', options)
-    if (!context) return canvasMountain(container, setup)
-    renderer = new THREE.WebGLRenderer({ canvas, context, ...options })
+    const gl = canvas.getContext('webgl2', params)
+    if (!gl) return canvasMountain(container, setup, study)
+    renderer = new THREE.WebGLRenderer({ canvas, context: gl, ...params })
   } catch {
-    return canvasMountain(container, setup)
+    return canvasMountain(container, setup, study)
   }
+  canvas.dataset.renderer = 'webgl'
+  container.appendChild(canvas)
   const c = courses[setup.course],
+    board = equipmentFor(setup.technique) === 'snowboard',
     gates = buildGates(c)
-  let disposed = false
+  const skyColor = new THREE.Color(0x4483ad),
+    studioColor = new THREE.Color(0x20323b)
   const scene = new THREE.Scene(),
-    camera = new THREE.PerspectiveCamera(54, 1, 0.075, 1600)
-  scene.fog = new THREE.FogExp2(0xc8dfec, 0.0036)
-  renderer.setPixelRatio(Math.min(globalThis.devicePixelRatio || 1, 1.6))
-  renderer.setClearColor(0xaccce2, 0)
+    camera = new THREE.PerspectiveCamera(48, 1, 0.055, 1900)
+  scene.fog = study
+    ? new THREE.Fog(0x20323b, 3, 13)
+    : new THREE.FogExp2(0xc1d4df, 0.003)
+  renderer.setPixelRatio(Math.min(devicePixelRatio || 1, 1.55))
+  renderer.setClearColor(0x90b6d5, 0)
   renderer.shadowMap.enabled = true
   renderer.shadowMap.type = THREE.PCFSoftShadowMap
-  container.appendChild(renderer.domElement)
-  const hemisphere = new THREE.HemisphereLight(0xf1f9ff, 0xa8bdcf, 1.69)
-  const sun = new THREE.DirectionalLight(0xfff0d8, 2.05)
+  renderer.toneMapping = THREE.ACESFilmicToneMapping
+  renderer.toneMappingExposure = 1.1
+  scene.add(new THREE.HemisphereLight(0xf0f7ff, 0x9aafbc, 1.63))
+  const sun = new THREE.DirectionalLight(0xffe5bd, 2.9)
   sun.castShadow = true
   sun.shadow.mapSize.set(1024, 1024)
-  sun.shadow.camera.left = -8
-  sun.shadow.camera.right = 8
-  sun.shadow.camera.top = 8
-  sun.shadow.camera.bottom = -8
-  sun.shadow.camera.far = 70
-  sun.shadow.bias = -0.00045
-  scene.add(hemisphere, sun, sun.target)
-  addTerrain(scene, c, setup, gates, () => {
-    if (!disposed) renderer.render(scene, camera)
+  Object.assign(sun.shadow.camera, {
+    left: -5,
+    right: 5,
+    top: 5,
+    bottom: -5,
+    far: 65,
   })
-  const guidePoints: THREE.Vector3[] = []
-  for (let d = 0; d <= c.length; d += 1)
-    guidePoints.push(pointAt(c, lineAt(gates, d), d, 0.066))
+  sun.shadow.bias = -0.00028
+  sun.shadow.normalBias = 0.009
+  scene.add(sun, sun.target)
+  const terrain = study
+    ? makeStudyFloor(scene)
+    : addTerrain(scene, c, setup, gates)
+  const backdrop = study
+    ? new THREE.Texture()
+    : new THREE.TextureLoader().load(
+        import.meta.env.BASE_URL + 'images/glacier-bowl.webp',
+      )
+  backdrop.colorSpace = THREE.SRGBColorSpace
+  backdrop.wrapS = THREE.MirroredRepeatWrapping
+  backdrop.repeat.set(2, 1)
+  backdrop.offset.x = 0.42
+  const sky = new THREE.Mesh(
+    new THREE.CylinderGeometry(740, 740, 760, 96, 1, true),
+    new THREE.MeshBasicMaterial({
+      map: backdrop,
+      side: THREE.BackSide,
+      fog: false,
+      depthWrite: false,
+      toneMapped: false,
+    }),
+  )
+  sky.renderOrder = -5
+  scene.add(sky)
+  // The opening panorama receives the same articulated rider and shadows as the playable piste.
+  const catcher = new THREE.Mesh(
+    new THREE.PlaneGeometry(25, 22),
+    new THREE.ShadowMaterial({ opacity: 0.36, depthWrite: false }),
+  )
+  catcher.receiveShadow = true
+  scene.add(catcher)
+  const path = []
+  for (let d = 0; !study && d <= c.length; d++)
+    path.push(pointAt(c, lineAt(gates, d), d, 0.061))
   const guide = new THREE.Line(
-    new THREE.BufferGeometry().setFromPoints(guidePoints),
+    new THREE.BufferGeometry().setFromPoints(path),
     new THREE.LineDashedMaterial({
-      color: 0x21af9d,
-      dashSize: 1.85,
-      gapSize: 1.02,
+      color: 0x65ab94,
+      dashSize: 1.6,
+      gapSize: 1.2,
       transparent: true,
-      opacity: 0.9,
+      opacity: 0.85,
     }),
   )
   guide.computeLineDistances()
   scene.add(guide)
-  const skier = skierModel()
+  const skier = skierModel(setup)
   scene.add(skier.root)
-  const spray = makeSpray(setup.surface)
+  const spray = makeSpray(setup.surface, board)
   scene.add(spray.points)
-  const trail = createTrails()
-  trail.lines.forEach((l) => scene.add(l))
-  const gravity = new THREE.ArrowHelper(
-    new THREE.Vector3(0, -1, 0),
-    new THREE.Vector3(),
-    0.9,
-    0xf9b854,
-    0.16,
-    0.11,
-  )
-  const reaction = new THREE.ArrowHelper(
-    new THREE.Vector3(0, 1, 0),
-    new THREE.Vector3(),
-    1,
-    0x21e3bd,
-    0.16,
-    0.11,
-  )
-  scene.add(gravity, reaction)
-  const look = new THREE.Vector3(),
-    pos = new THREE.Vector3(),
-    toward = new THREE.Vector3()
-  let viewportWidth = 0,
-    viewportHeight = 0
-  const resize = () => {
-    const w = Math.max(1, container.clientWidth),
-      h = Math.max(1, container.clientHeight)
-    if (w === viewportWidth && h === viewportHeight) return
-    viewportWidth = w
-    viewportHeight = h
-    renderer.setSize(w, h, false)
-    camera.aspect = w / h
-    camera.updateProjectionMatrix()
-    renderer.render(scene, camera)
+  const tracks = makeTracks(scene, c, board),
+    lens = makeLens(scene)
+  const pos = new THREE.Vector3(),
+    eye = new THREE.Vector3(),
+    target = new THREE.Vector3(),
+    dest = new THREE.Vector3(),
+    aim = new THREE.Vector3(),
+    projected = new THREE.Vector3()
+  const project = (v: THREE.Vector3): ScreenPoint => {
+    projected.copy(v).project(camera)
+    return {
+      x: (projected.x + 1) * 0.5,
+      y: (1 - projected.y) * 0.5,
+      visible:
+        projected.z > -1 &&
+        projected.z < 1 &&
+        Math.abs(projected.x) < 0.99 &&
+        Math.abs(projected.y) < 0.97,
+    }
   }
-  resize()
-  const ro = new ResizeObserver(resize)
+  let lastTime = 0,
+    oldD = -1,
+    wasPlate = false,
+    oldW = 0,
+    oldH = 0
+  const ro = new ResizeObserver(() => {
+    const w = container.clientWidth,
+      h = container.clientHeight
+    if (w && h && (w !== oldW || h !== oldH)) {
+      oldW = w
+      oldH = h
+      renderer.setSize(w, h, false)
+      camera.aspect = w / h
+      camera.updateProjectionMatrix()
+    }
+  })
   ro.observe(container)
+  renderer.setSize(container.clientWidth, container.clientHeight, false)
+  camera.aspect = container.clientWidth / Math.max(1, container.clientHeight)
+  camera.updateProjectionMatrix()
   return {
     draw(f, opt) {
-      pos.copy(pointAt(c, f.x, f.d))
-      skier.root.position.copy(pos)
-      skier.root.rotation.order = 'XYZ'
-      skier.root.rotation.set(-(f.pitch || c.pitch) * radians, -f.heading, 0)
-      skier.pose(f, setup, opt.camera === 'first')
-      guide.visible = opt.line
-      trail.update(f, c)
-      spray.update(f, pos, c.pitch * radians)
-      gravity.visible = reaction.visible = opt.forces
-      gravity.position.copy(pos).add(new THREE.Vector3(0.65, 1.42, 0))
-      reaction.position.copy(pos).add(new THREE.Vector3(-0.22, 0.06, 0))
-      const slopeAngle = (f.pitch || c.pitch) * radians,
-        normal = Math.cos(slopeAngle)
-      const sideForce =
-        Math.tan(f.lean) * normal + Math.sin(slopeAngle) * Math.sin(f.heading)
-      toward.set(
-        sideForce * Math.cos(f.heading),
-        normal * Math.cos(slopeAngle) +
-          sideForce * Math.sin(slopeAngle) * Math.sin(f.heading),
-        -normal * Math.sin(slopeAngle) +
-          sideForce * Math.cos(slopeAngle) * Math.sin(f.heading),
-      )
-      const magnitude = toward.length()
-      reaction.setDirection(toward.normalize())
-      reaction.setLength(0.9 * magnitude, 0.17, 0.11)
-      sun.position.copy(pos).add(new THREE.Vector3(-13, 24, -10))
-      sun.target.position.copy(pos)
-      const yaw = f.heading * 0.48 + opt.orbit
-      if (opt.camera === 'first') {
-        camera.position
-          .copy(pos)
-          .add(new THREE.Vector3(0, 1.5 - f.flex * 0.23, 0))
-        look
-          .copy(pos)
-          .add(
-            new THREE.Vector3(
-              Math.sin(f.heading) * 15,
-              -1.45,
-              -Math.cos(f.heading) * 17,
-            ),
-          )
-      } else {
-        const wide = opt.camera === 'wide',
-          dist = wide ? 9.2 : 4.65,
-          angle = yaw + (wide ? 0.56 : 0.18)
-        camera.position
-          .copy(pos)
-          .add(
-            new THREE.Vector3(
-              -Math.sin(angle) * dist,
-              (wide ? 3.9 : 2.3) + Math.sin(c.pitch * radians) * dist * 0.54,
-              Math.cos(angle) * dist,
-            ),
-          )
-        look
-          .copy(pos)
-          .add(
-            new THREE.Vector3(
-              Math.sin(f.heading) * 0.62,
-              wide ? 1.35 : 1.13,
-              -0.66,
-            ),
-          )
+      const plate = isTrailhead(opt) && setup.course === 'ridge'
+      const now = performance.now() / 1000,
+        dt = Math.min(0.15, Math.max(0, now - lastTime)),
+        snap = !lastTime || opt.reduced || f.d < oldD - 1 || wasPlate !== plate
+      oldD = f.d
+      lastTime = now
+      wasPlate = plate
+      scene.background = plate ? null : study ? studioColor : skyColor
+      terrain.visible = !plate
+      sky.visible = !study && !plate
+      catcher.visible = plate
+      guide.visible = opt.line && !plate
+      const pitch = (f.pitch || c.pitch) * radians
+      pos.set(f.x, worldHeight(c, f.d, f.x), zAt(c, f.d))
+      if (study) {
+        terrain.position.copy(pos)
+        terrain.rotation.x = -pitch
       }
-      camera.lookAt(look)
-      container.style.setProperty('--pan', 50 + Math.sin(yaw) * 16 + '%')
+      catcher.position.copy(pos)
+      catcher.position.y += 0.006
+      catcher.rotation.x = -Math.PI / 2 - pitch
+      sky.position.copy(pos)
+      sky.position.y -= 143
+      container.dataset.plate = plate ? 'on' : 'off'
+      skier.root.position.copy(pos)
+      skier.root.rotation.set(-pitch, -f.heading - f.boardYaw, 0, 'XYZ')
+      const pose = riderPose(f, setup),
+        forces = analyse(f, setup)
+      skier.pose(f, pose, opt.camera === 'first')
+      skier.root.updateMatrixWorld(true)
+      lens.update(skier.root, pose, forces, opt.lens, opt.forces, board)
+      tracks(f, !study && !plate)
+      if (!study) spray.update(f, pos, pitch)
+      sun.position.copy(pos).add(new THREE.Vector3(-12, 19, -8))
+      sun.target.position.copy(pos)
+      const shot = cameraShot(f, c, opt)
+      dest.fromArray(shot.eye)
+      aim.fromArray(shot.target)
+      const ease = snap ? 1 : 1 - Math.exp(-dt * 6.8)
+      eye.lerp(dest, ease)
+      target.lerp(aim, ease)
+      camera.position.copy(pos).add(eye)
+      const distanceOnSlope = -camera.position.z / Math.cos(c.pitch * radians)
+      camera.position.y = Math.max(
+        camera.position.y,
+        worldHeight(c, distanceOnSlope, camera.position.x) + 0.14,
+      )
+      const fov = camera.fov + (shot.fov - camera.fov) * ease
+      if (Math.abs(camera.fov - fov) > 0.001) {
+        camera.fov = fov
+        camera.updateProjectionMatrix()
+      }
+      camera.lookAt(dest.copy(pos).add(target))
+      camera.updateMatrixWorld()
       renderer.render(scene, camera)
+      const gate = gates[f.gatesSeen],
+        g = gate
+          ? project(pointAt(c, gate.x, gate.d, 2.3))
+          : { x: 0, y: 0, visible: false }
+      if (plate || !opt.line) g.visible = false
+      camera.getWorldDirection(dest)
+      return {
+        upper: project(lens.upper),
+        lower: project(lens.lower),
+        gate: g,
+        bearing: (320 + Math.atan2(dest.x, -dest.z) / radians + 360) % 360,
+      }
     },
     dispose() {
-      disposed = true
       ro.disconnect()
       const mats = new Set<THREE.Material>(),
-        geometries = new Set<THREE.BufferGeometry>(),
-        textures = new Set<THREE.Texture>()
-      scene.traverse((obj) => {
-        const mesh = obj as THREE.Mesh
-        if (mesh.geometry) geometries.add(mesh.geometry)
+        geos = new Set<THREE.BufferGeometry>(),
+        maps = new Set<THREE.Texture>()
+      scene.traverse((o) => {
+        const mesh = o as THREE.Mesh
+        if (mesh.geometry) geos.add(mesh.geometry)
         if (mesh.material)
-          for (const mat of Array.isArray(mesh.material)
+          for (const m of Array.isArray(mesh.material)
             ? mesh.material
             : [mesh.material])
-            mats.add(mat)
-        if (obj instanceof THREE.InstancedMesh) obj.dispose()
+            mats.add(m)
+        if (o instanceof THREE.InstancedMesh) o.dispose()
       })
       mats.forEach((m) => {
-        for (const value of Object.values(m))
-          if (value instanceof THREE.Texture) textures.add(value)
+        Object.values(m).forEach((v) => {
+          if (v instanceof THREE.Texture) maps.add(v)
+        })
         m.dispose()
       })
-      textures.forEach((t) => t.dispose())
-      geometries.forEach((g) => g.dispose())
+      maps.forEach((m) => m.dispose())
+      geos.forEach((g) => g.dispose())
       sun.shadow.dispose()
       renderer.dispose()
       renderer.forceContextLoss()
-      renderer.domElement.remove()
+      canvas.remove()
     },
   }
 }

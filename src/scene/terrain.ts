@@ -59,7 +59,10 @@ function snowTexture(setup: Setup) {
       setup.surface === 'groomed'
         ? 12 * Math.pow(0.5 + 0.5 * Math.cos((x * Math.PI) / 4), 3)
         : 0
-    const grain = random() * (setup.surface === 'powder' ? 12 : 6)
+    const y = Math.floor(i / 256)
+    const grain =
+      random() * (setup.surface === 'powder' ? 17 : 8) +
+      2.3 * Math.sin(x * 0.09 + Math.sin(y * 0.06)) * Math.sin(y * 0.11)
     const n = 253 - ridge - grain
     px.data.set([n - 3, n, Math.min(255, n + 4), 255], i * 4)
   }
@@ -71,12 +74,7 @@ function snowTexture(setup: Setup) {
   return map
 }
 
-function addForest(
-  scene: THREE.Scene,
-  c: Course,
-  setup: Setup,
-  textureReady: () => void,
-) {
+function addForest(scene: THREE.Group, c: Course, setup: Setup) {
   const random = randomSeed(
     setup.course === 'ridge' ? 472 : setup.course === 'bowl' ? 629 : 818,
   )
@@ -84,7 +82,6 @@ function addForest(
   const dummy = new THREE.Object3D()
   const texture = new THREE.TextureLoader().load(
     import.meta.env.BASE_URL + 'images/spruce.webp',
-    textureReady,
   )
   texture.colorSpace = THREE.SRGBColorSpace
   // Upright cutouts retain fine branch detail and keep the entire forest in one draw call.
@@ -94,6 +91,19 @@ function addForest(
     alphaToCoverage: true,
     side: THREE.DoubleSide,
   })
+  foliage.onBeforeCompile = (shader) => {
+    shader.vertexShader = shader.vertexShader.replace(
+      '#include <project_vertex>',
+      [
+        'vec3 center = (modelMatrix * instanceMatrix * vec4(0.,0.,0.,1.)).xyz;',
+        'vec3 sight = normalize(cameraPosition - center);',
+        'vec3 across = normalize(vec3(sight.z,0.,-sight.x));',
+        'vec3 at = center + across * position.x * length(instanceMatrix[0].xyz) + vec3(0.,position.y * length(instanceMatrix[1].xyz),0.);',
+        'vec4 mvPosition = viewMatrix * vec4(at,1.);',
+        'gl_Position = projectionMatrix * mvPosition;',
+      ].join('\n'),
+    )
+  }
   const trees = new THREE.InstancedMesh(
     new THREE.PlaneGeometry(1, 1),
     foliage,
@@ -164,7 +174,7 @@ function addForest(
   }
   scene.add(rocks)
 }
-function addGates(scene: THREE.Scene, c: Course, gates: Gate[]) {
+function addGates(scene: THREE.Group, c: Course, gates: Gate[]) {
   const pole = new THREE.CylinderGeometry(0.045, 0.052, 2.05, 7)
   const fabric = new THREE.BoxGeometry(1.05, 0.53, 0.028)
   const colors = [0xef5545, 0x3578d6].map(
@@ -221,19 +231,24 @@ export function addTerrain(
   course: Course,
   setup: Setup,
   gates: Gate[],
-  textureReady: () => void,
 ) {
+  const terrain = new THREE.Group(),
+    texture = snowTexture(setup)
   const snow = new THREE.Mesh(
     snowGeometry(course),
     new THREE.MeshStandardMaterial({
-      map: snowTexture(setup),
+      map: texture,
+      bumpMap: texture,
+      bumpScale: setup.surface === 'powder' ? 0.066 : 0.022,
       color: setup.surface === 'ice' ? 0xd5e7f5 : 0xffffff,
       roughness: setup.surface === 'ice' ? 0.38 : 0.94,
       vertexColors: true,
     }),
   )
   snow.receiveShadow = true
-  scene.add(snow)
-  addForest(scene, course, setup, textureReady)
-  addGates(scene, course, gates)
+  terrain.add(snow)
+  addForest(terrain, course, setup)
+  addGates(terrain, course, gates)
+  scene.add(terrain)
+  return terrain
 }

@@ -34,7 +34,7 @@ export function initialPrefs(): Prefs {
     units: p?.units === 'imperial' ? 'imperial' : 'metric',
     touch: p?.touch === true,
     line: p?.line !== false,
-    forces: p?.forces === true,
+    forces: p?.forces !== false,
   }
 }
 export function initialLog(): Run[] {

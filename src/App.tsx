@@ -1,91 +1,169 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import {
-  ArrowRight,
+  ArrowDownRight,
   BookOpen,
   Check,
+  ChevronDown,
   Download,
-  Gamepad2,
+  Flag,
   History,
-  Keyboard,
+  Layers3,
+  MapPin,
+  Maximize,
+  Minimize,
+  MountainSnow,
+  Pause,
   Settings,
-  Waypoints,
+  Target,
+  Volume2,
+  VolumeX,
 } from 'lucide-react'
-import { techniques, type Setup, type TechniqueId } from './course.ts'
-import { referenceRun, type Run } from './physics.ts'
+import { cameras, nextCamera, type CameraMode } from './cameras.ts'
+import { coachingCue, type Lens } from './analysis.ts'
+import {
+  courses,
+  techniques,
+  equipmentFor,
+  equipmentName,
+  surfaces,
+  type Setup,
+  type TechniqueId,
+} from './course.ts'
+import { worldHeight, type Frame, type Run, type Sample } from './physics.ts'
 import {
   appendRun,
   initialLog,
   initialPrefs,
   initialSetup,
   write,
+  lengthText,
+  duration,
   type Prefs,
 } from './storage.ts'
 import { Brand, Modal, SchemeTabs, Toggle } from './UI.tsx'
 import { skiingKeys, useRun } from './useRun.ts'
 import { Viewport } from './Viewport.tsx'
-import { Telemetry } from './Telemetry.tsx'
 import {
-  Controls,
-  Log,
-  RunDetails,
-  SetupPanel,
-  TelemetryHelp,
-} from './Panels.tsx'
+  TrailMap,
+  FlightInstruments,
+  InstrumentPanel,
+  Dock,
+  TouchPad,
+  Loadout,
+  FrameInspector,
+} from './Cockpit.tsx'
+import { Controls, Log, RunDetails, TelemetryHelp } from './Panels.tsx'
+import { Telemetry } from './Telemetry.tsx'
 import { Lab } from './Lab.tsx'
 import { useOffline } from './offline.ts'
-import type { CameraMode } from './mountain.ts'
 
-const navigation = [
-  { id: 'simulator', name: 'Simulator', icon: Gamepad2 },
-  { id: 'technique-lab', name: 'Technique lab', icon: BookOpen },
-  { id: 'run-log', name: 'Run log', icon: History },
-] as const
-type Page = (typeof navigation)[number]['id']
-type Dialog = 'controls' | 'settings' | 'telemetry' | null
-const fromHash = (): Page =>
-  navigation.find((n) => '#' + n.id === window.location.hash)?.id ?? 'simulator'
-const cameraModes: CameraMode[] = ['chase', 'wide', 'first']
-
+type Dialog =
+  | 'settings'
+  | 'controls'
+  | 'setup'
+  | 'analysis'
+  | 'technique-lab'
+  | 'run-log'
+  | null
+const fromHash = (): Dialog =>
+  location.hash === '#technique-lab'
+    ? 'technique-lab'
+    : location.hash === '#run-log'
+      ? 'run-log'
+      : null
 export default function App() {
-  const [page, setPage] = useState<Page>(fromHash),
-    [setup, setSetup] = useState<Setup>(initialSetup),
-    [prefs, setPrefs] = useState(initialPrefs)
-  const [runs, setRuns] = useState(initialLog),
-    logRef = useRef(runs),
+  const [setup, setSetup] = useState<Setup>(initialSetup),
+    [prefs, setPrefs] = useState(initialPrefs),
+    [runs, setRuns] = useState(initialLog)
+  const [dialog, setDialog] = useState<Dialog>(fromHash),
     [review, setReview] = useState<Run | null>(null),
-    [dialog, setDialog] = useState<Dialog>(null)
+    log = useRef(runs)
   const [labId, setLabId] = useState<TechniqueId>(setup.technique),
     [camera, setCamera] = useState<CameraMode>('chase'),
-    [inspect, setInspect] = useState(false)
-  const [storageOk, setStorageOk] = useState(true),
+    [lens, setLens] = useState<Lens>('forces')
+  const [resetView, reset] = useState(0),
+    [full, setFull] = useState(false),
+    [saved, setSaved] = useState(true),
+    [snapshot, setSnapshot] = useState<{
+      frame: Frame
+      samples: Sample[]
+    } | null>(null)
+  const compassRef = useRef<HTMLCanvasElement>(null),
+    world = useRef<HTMLElement>(null),
     offline = useOffline()
-  const storeRun = useCallback((result: Run) => {
-    const next = [result, ...logRef.current].slice(0, 200)
-    logRef.current = next
+  const record = useCallback((r: Run) => {
+    const next = [r, ...log.current].slice(0, 200)
+    log.current = next
     setRuns(next)
-    void appendRun(result, next).then(({ records, saved }) => {
-      logRef.current = records
+    void appendRun(r, next).then(({ records, saved }) => {
+      log.current = records
       setRuns(records)
-      setStorageOk(saved)
+      setSaved(saved)
     })
-    setReview(result)
-    setInspect(false)
-    if (document.fullscreenElement)
-      void document.exitFullscreen().catch(() => {})
+    setReview(r)
   }, [])
-  const run = useRun(setup, prefs.sound, storeRun)
-  const reference = useMemo(() => referenceRun(setup), [setup])
-  useEffect(() => {
-    const refresh = (e: StorageEvent) => {
-      if (e.key === 'fallline.runs') {
-        const records = initialLog()
-        logRef.current = records
-        setRuns(records)
-      }
+  const run = useRun(setup, prefs.sound, record, !!dialog || !!review),
+    f = run.frame,
+    c = courses[setup.course],
+    preview = run.phase === 'preview',
+    paused = run.phase === 'paused'
+  function close() {
+    setDialog(null)
+    setReview(null)
+    if (location.hash)
+      history.replaceState(null, '', location.pathname + location.search)
+    world.current?.focus({ preventScroll: true })
+  }
+  function open(which: Dialog) {
+    run.pause()
+    if (which === 'analysis')
+      setSnapshot({
+        frame: { ...run.current.current },
+        samples: [...run.samples],
+      })
+    setDialog(which)
+    setReview(null)
+    const hash =
+      which === 'run-log' || which === 'technique-lab' ? '#' + which : ''
+    history.replaceState(null, '', location.pathname + location.search + hash)
+  }
+  function start(demo = false) {
+    close()
+    reset((n) => n + 1)
+    run.start(demo)
+    requestAnimationFrame(() => world.current?.focus({ preventScroll: true }))
+  }
+  function configure(s: Setup) {
+    if (run.phase !== 'preview') run.end()
+    setSetup(s)
+    setLabId(s.technique)
+    setCamera('chase')
+    reset((n) => n + 1)
+    close()
+  }
+  function practice(id: TechniqueId, demo = false) {
+    configure({ ...setup, technique: id })
+    start(demo)
+  }
+  function changeLens(value: Lens) {
+    setLens(value)
+    if (!prefs.forces) setPrefs((p) => ({ ...p, forces: true }))
+  }
+  function sound() {
+    if (!prefs.sound) run.audio.current.enable()
+    else run.audio.current.update(0, 0, false)
+    setPrefs((p) => ({ ...p, sound: !p.sound }))
+  }
+  async function fullscreen() {
+    try {
+      if (document.fullscreenElement) await document.exitFullscreen()
+      else if (document.documentElement.requestFullscreen)
+        await document.documentElement.requestFullscreen()
+      else setFull((v) => !v)
+    } catch {
+      setFull((v) => !v)
     }
-    window.addEventListener('storage', refresh)
-    return () => window.removeEventListener('storage', refresh)
-  }, [])
+  }
   useEffect(() => {
     write('setup', setup)
   }, [setup])
@@ -93,126 +171,85 @@ export default function App() {
     write('preferences', prefs)
   }, [prefs])
   useEffect(() => {
-    const change = () => {
-      run.pause()
-      setPage(fromHash())
-      setDialog(null)
-      setReview(null)
+    const hash = () => {
+        run.pause()
+        setDialog(fromHash())
+        setReview(null)
+      },
+      fs = () => setFull(!!document.fullscreenElement)
+    const storage = (e: StorageEvent) => {
+      if (e.key === 'fallline.runs') {
+        log.current = initialLog()
+        setRuns(log.current)
+      }
     }
-    window.addEventListener('hashchange', change)
-    return () => window.removeEventListener('hashchange', change)
+    window.addEventListener('hashchange', hash)
+    window.addEventListener('storage', storage)
+    document.addEventListener('fullscreenchange', fs)
+    return () => {
+      window.removeEventListener('hashchange', hash)
+      window.removeEventListener('storage', storage)
+      document.removeEventListener('fullscreenchange', fs)
+    }
   }, [run.pause])
   useEffect(() => {
-    document.title = navigation.find((n) => n.id === page)!.name + ' · Fallline'
-  }, [page])
-  function navigate(next: Page) {
-    if (next !== page) run.pause()
-    if (window.location.hash !== '#' + next)
-      window.history.pushState(null, '', '#' + next)
-    setPage(next)
-    setDialog(null)
-    setReview(null)
-    window.scrollTo({ top: 0 })
-  }
-  function modal(what: Dialog) {
-    if (what) run.pause()
-    setDialog(what)
-  }
-  function updateSetup(s: Setup) {
-    if (run.phase === 'demo') run.end()
-    setSetup(s)
-    setInspect(false)
-    setCamera('chase')
-  }
-  function start(demo = false) {
-    setInspect(false)
-    run.start(demo)
-    requestAnimationFrame(() => {
-      const view = document.querySelector<HTMLElement>('.viewport')
-      view?.focus({ preventScroll: true })
-      if (window.matchMedia('(max-width:680px)').matches)
-        view?.scrollIntoView({ block: 'start' })
-    })
-  }
-  function startWith(s: Setup, demo = false) {
-    if (run.phase !== 'preview') run.end()
-    navigate('simulator')
-    updateSetup({ ...s })
-    setReview(null)
-    setDialog(null)
-    start(demo)
-  }
-  function soundToggle() {
-    if (!prefs.sound) run.audio.current.enable()
-    else run.audio.current.update(0, 0, false)
-    setPrefs((p) => ({ ...p, sound: !p.sound }))
-  }
-  function toggleAid(k: 'line' | 'forces') {
-    setPrefs((p) => ({ ...p, [k]: !p[k] }))
-    if (run.phase === 'preview') setInspect(true)
-  }
-  function openLab() {
-    setLabId(setup.technique)
-    navigate('technique-lab')
-  }
-  const keyHandler = useRef<(e: KeyboardEvent, down: boolean) => void>(() => {})
-  keyHandler.current = (e, down) => {
-    const el = e.target as HTMLElement
-    const isSkiKey = skiingKeys.has(e.code)
+    if (run.phase === 'running' || run.phase === 'demo')
+      world.current?.focus({ preventScroll: true })
+  }, [run.phase])
+  const input = useRef<(e: KeyboardEvent, down: boolean) => void>(() => {})
+  input.current = (e, down) => {
     if (!down) {
-      if (isSkiKey) run.keys.current.delete(e.code)
+      run.keys.current.delete(e.code)
       return
     }
+    const el = e.target as HTMLElement
     if (
       e.altKey ||
       e.ctrlKey ||
       e.metaKey ||
       dialog ||
       review ||
-      page !== 'simulator' ||
-      el.matches('input, select, textarea, [contenteditable=true]')
+      el.matches('input,select,textarea,[contenteditable=true]')
     )
       return
-    if (e.key === '?') {
-      e.preventDefault()
-      modal('controls')
-      return
-    }
-    if (run.phase === 'running' && isSkiKey) {
-      if (e.code === 'Space' && el.closest('button,summary,a')) return
+    if (run.phase === 'running' && skiingKeys.has(e.code)) {
+      if (e.code === 'Space' && el.closest('button,a,summary')) return
       e.preventDefault()
       run.keys.current.add(e.code)
       return
     }
     if (e.repeat) return
-    if (e.code === 'Enter' && !el.closest('button,summary,a')) {
-      if (run.phase === 'preview' || run.phase === 'demo') {
-        e.preventDefault()
-        start()
-      } else if (run.phase === 'paused') {
-        e.preventDefault()
-        run.resume()
-      }
+    if (e.key === '?') {
+      e.preventDefault()
+      open('controls')
+    }
+    if (e.code === 'Enter' && !el.closest('button,a,summary')) {
+      e.preventDefault()
+      if (paused) run.resume()
+      else if (preview || run.phase === 'demo') start()
     }
     if (e.code === 'KeyP' || e.code === 'Escape') {
-      if (run.phase === 'running' || run.phase === 'demo') {
-        e.preventDefault()
-        run.pause()
-      } else if (run.phase === 'paused' && e.code === 'KeyP') {
-        e.preventDefault()
-        run.resume()
-      }
+      e.preventDefault()
+      if (paused) run.resume()
+      else run.pause()
     }
-    if (e.code === 'KeyC') {
-      setCamera(
-        cameraModes[(cameraModes.indexOf(camera) + 1) % cameraModes.length],
+    if (e.code === 'KeyC') setCamera(nextCamera(camera))
+    if (/^Digit[1-5]$/.test(e.code))
+      setCamera(cameras[Number(e.code.slice(-1)) - 1].id)
+    if (e.code === 'KeyF')
+      changeLens(
+        lens === 'forces' ? 'body' : lens === 'body' ? 'contact' : 'forces',
       )
-      if (run.phase === 'preview') setInspect(true)
+    if (e.code === 'Period' && paused) {
+      e.preventDefault()
+      run.singleStep()
     }
+    if (e.code === 'KeyR') reset((v) => v + 1)
+    if (e.code === 'KeyM') sound()
   }
   useEffect(() => {
-    const down = (e: KeyboardEvent) => keyHandler.current(e, true),
-      up = (e: KeyboardEvent) => keyHandler.current(e, false)
+    const down = (e: KeyboardEvent) => input.current(e, true),
+      up = (e: KeyboardEvent) => input.current(e, false)
     window.addEventListener('keydown', down)
     window.addEventListener('keyup', up)
     return () => {
@@ -220,174 +257,294 @@ export default function App() {
       window.removeEventListener('keyup', up)
     }
   }, [])
-  const live = run.phase !== 'preview'
-  let cue = techniques[setup.technique].cue as string
-  if (live && Math.abs(run.frame.x) > 21)
-    cue =
-      'You are near the edge of the piste. Release the outside turn and guide both skis back toward the next gate.'
-  else if (live && run.frame.brake > 0.6)
-    cue =
-      'Braking increases skidding friction. Ease off as your speed comes under control.'
-  else if (live && run.frame.tuck > 0.65)
-    cue =
-      'Your lower stance reduces air drag. Watch how speed builds along the fall line.'
-  else if (live && Math.abs(run.frame.edge) > 30)
-    cue =
-      'Pressure is building on the outside ski. Ease the edge angle before changing direction.'
-  else if (live && run.frame.flex > 0.7)
-    cue =
-      'Flexion lets the legs absorb changes in the snow while the upper body stays quiet.'
+  const liveGate = f.t - f.lastGateTime < 1.35 && !preview
   return (
-    <>
-      <header className="app-header">
-        <div className="header-inner">
-          <a
-            href="#simulator"
-            className="brand-link"
-            aria-label="Fallline simulator home"
-            onClick={(e) => {
-              e.preventDefault()
-              navigate('simulator')
-            }}
-          >
-            <Brand />
-          </a>
-          <nav aria-label="Main navigation">
-            {navigation.map((n) => (
-              <a
-                key={n.id}
-                href={'#' + n.id}
-                onClick={(e) => {
-                  e.preventDefault()
-                  navigate(n.id)
-                }}
-                className={page === n.id ? 'active' : ''}
-                aria-current={page === n.id ? 'page' : undefined}
-              >
-                <n.icon size={16} />
-                {n.name}
-              </a>
-            ))}
-          </nav>
-          <div className="header-right">
-            <span className="connect-status">
-              <i />
-              {!offline.online
-                ? 'Offline mode'
-                : offline.cached
-                  ? 'Offline ready'
-                  : 'Local session'}
-            </span>
-            <span className="header-divider" />
-            <button
-              className="settings-btn"
-              aria-label="Settings"
-              title="Settings"
-              onClick={() => modal('settings')}
+    <main
+      ref={world}
+      className={
+        'ski-sim ' +
+        (preview ? 'at-rest' : 'on-run') +
+        (full ? ' expanded' : '') +
+        (prefs.touch ? ' touch-enabled' : '')
+      }
+      tabIndex={-1}
+      aria-label="Fallline alpine simulator"
+    >
+      <Viewport
+        run={run}
+        setup={setup}
+        prefs={prefs}
+        camera={camera}
+        lens={lens}
+        resetView={resetView}
+        compassRef={compassRef}
+        blocked={!!dialog || !!review}
+        details={() => open('analysis')}
+      />
+      <header className="game-header">
+        <a
+          className="game-brand"
+          href="#simulator"
+          aria-label="Fallline simulator"
+          onClick={(e) => {
+            e.preventDefault()
+            close()
+          }}
+        >
+          <Brand />
+        </a>
+        <canvas
+          ref={compassRef}
+          className="scene-compass"
+          role="img"
+          aria-label="Camera compass bearing"
+        />
+        <div className="game-tools">
+          <nav aria-label="Game menu">
+            <a
+              href="#technique-lab"
+              title="Technique lab"
+              aria-label="Technique lab"
+              onClick={(e) => {
+                e.preventDefault()
+                setLabId(setup.technique)
+                open('technique-lab')
+              }}
             >
-              <Settings size={19} />
-            </button>
-          </div>
+              <BookOpen size={16} />
+              <span>Technique lab</span>
+            </a>
+            <a
+              href="#run-log"
+              title="Run log"
+              aria-label="Run log"
+              onClick={(e) => {
+                e.preventDefault()
+                open('run-log')
+              }}
+            >
+              <History size={17} />
+              <span>Run log</span>
+            </a>
+          </nav>
+          <i />
+          <button
+            onClick={sound}
+            aria-label={prefs.sound ? 'Mute audio' : 'Enable audio'}
+            title="Slope audio"
+          >
+            {prefs.sound ? <Volume2 /> : <VolumeX />}
+          </button>
+          <button
+            onClick={fullscreen}
+            aria-label={full ? 'Exit fullscreen' : 'Enter fullscreen'}
+            title="Fullscreen"
+          >
+            {full ? <Minimize /> : <Maximize />}
+          </button>
+          <button
+            onClick={() => open('settings')}
+            aria-label="Settings"
+            title="Settings"
+          >
+            <Settings />
+          </button>
         </div>
       </header>
-      <main className="main-shell" id="main-content">
-        {page === 'simulator' && (
-          <>
-            <div className="page-heading">
-              <div>
-                <h1>Slope simulator</h1>
-                <p>
-                  Practice your technique in an interactive alpine environment.
-                </p>
-              </div>
-              <button
-                className="outline-btn controls-trigger"
-                onClick={() => modal('controls')}
-              >
-                <Keyboard size={17} />
-                Controls
-              </button>
-            </div>
-            <div className="sim-grid">
-              <Viewport
-                run={run}
-                setup={setup}
-                prefs={prefs}
-                toggleSound={soundToggle}
-                camera={camera}
-                setCamera={setCamera}
-                inspect={inspect}
-                setInspect={setInspect}
-                watch={() => start(true)}
-              />
-              <SetupPanel
-                setup={setup}
-                update={updateSetup}
-                run={run}
-                prefs={prefs}
-                toggle={toggleAid}
-                start={() => start()}
-              />
-            </div>
-            <Telemetry
-              samples={live ? run.samples : reference}
-              preview={!live}
-              units={prefs.units}
-              about={() => modal('telemetry')}
-            />
-            <section className="coaching-panel">
-              <span className="coach-icon">
-                <Waypoints size={23} />
-              </span>
-              <div>
-                <span className="eyebrow">Technique focus</span>
-                <h2>{techniques[setup.technique].name}</h2>
-                <p>{cue}</p>
-              </div>
-              <button className="outline-btn" onClick={openLab}>
-                Technique lab
-                <ArrowRight size={15} />
-              </button>
-            </section>
-          </>
-        )}
-        {page === 'technique-lab' && (
-          <Lab
-            id={labId}
-            select={setLabId}
-            practice={(id, demo) =>
-              startWith({ ...setup, technique: id }, demo)
-            }
-            units={prefs.units}
+      <section className="course-hud">
+        <div className="mode-label">
+          <i />
+          {preview
+            ? 'Free practice'
+            : paused
+              ? 'Frame paused'
+              : run.phase === 'demo'
+                ? 'Technique demo'
+                : 'Run active'}
+        </div>
+        <h1>{c.name}</h1>
+        <div className="region">
+          <MapPin size={14} />
+          {c.region}
+        </div>
+        <div className="course-badges">
+          <span>
+            <i className={'slope-symbol ' + c.symbol} />
+            {c.level}
+          </span>
+          <span>
+            <ArrowDownRight size={13} />
+            {preview ? c.pitch : Math.round(f.pitch)}° pitch
+          </span>
+        </div>
+        <button className="equipped" onClick={() => open('setup')}>
+          <Layers3 size={14} />
+          {equipmentName[equipmentFor(setup.technique)]}
+          <i /> {surfaces[setup.surface].name}
+          <ChevronDown size={11} />
+        </button>
+      </section>
+      <InstrumentPanel
+        setup={setup}
+        frame={f}
+        prefs={prefs}
+        lens={lens}
+        setLens={changeLens}
+        toggle={() => setPrefs((p) => ({ ...p, forces: !p.forces }))}
+        details={() => open('analysis')}
+      />
+      {!preview && (
+        <div className={'score-ribbon ' + (liveGate ? 'gate-flash' : '')}>
+          <Flag size={13} />
+          {liveGate
+            ? f.lastGateHit
+              ? 'Gate cleared +100'
+              : 'Gate missed'
+            : f.gatesSeen < c.gates
+              ? 'Gate ' + (f.gatesSeen + 1) + ' / ' + c.gates
+              : 'Finish line'}
+          <i />
+          {f.points} pts
+        </div>
+      )}
+      {paused && (
+        <div className="paused-chip">
+          <Pause size={13} />
+          Paused <span>{f.t.toFixed(2)} s</span>
+        </div>
+      )}
+      <FlightInstruments
+        run={run}
+        units={prefs.units}
+        details={() => open('analysis')}
+      />
+      <div className="technique-cue">
+        <span className="hud-kicker">
+          <Target size={12} />
+          Technique focus
+        </span>
+        <b>{techniques[setup.technique].name}</b>
+        <span>
+          {preview ? techniques[setup.technique].cue : coachingCue(f, setup)}
+        </span>
+      </div>
+      <TrailMap run={run} setup={setup} units={prefs.units} />
+      <TouchPad run={run} force={prefs.touch} />
+      <Dock
+        run={run}
+        camera={camera}
+        changeCamera={setCamera}
+        start={start}
+        setup={() => open('setup')}
+        controls={() => open('controls')}
+      />
+      <div className="game-foot">
+        <span>
+          <i />
+          {offline.online
+            ? offline.cached
+              ? 'Offline ready'
+              : 'Local session'
+            : 'Offline mode'}
+        </span>
+        <span>
+          <MountainSnow size={11} />
+          {lengthText(
+            preview ? c.altitude : c.altitude + worldHeight(c, f.d, f.x),
+            prefs.units,
+          )}
+          <b /> {preview ? 'Course preview' : duration(f.t)}
+        </span>
+      </div>
+      {dialog === 'setup' && (
+        <Modal title="Run setup" onClose={close}>
+          <Loadout
+            setup={setup}
+            prefs={prefs}
+            apply={configure}
+            toggle={() => setPrefs((p) => ({ ...p, line: !p.line }))}
+            inRun={!preview && !run.automated}
           />
-        )}
-        {page === 'run-log' && (
-          <Log
-            runs={runs}
-            open={setReview}
-            practice={() => navigate('simulator')}
-            units={prefs.units}
-          />
-        )}
-      </main>
+        </Modal>
+      )}
       {dialog === 'controls' && (
-        <Modal title="Run controls" onClose={() => setDialog(null)}>
+        <Modal title="Run controls" onClose={close}>
           <Controls />
         </Modal>
       )}
-      {dialog === 'telemetry' && (
-        <Modal title="Reading your telemetry" onClose={() => setDialog(null)}>
-          <TelemetryHelp />
+      {dialog === 'analysis' && (
+        <Modal title="Frame analysis" onClose={close}>
+          <FrameInspector f={snapshot?.frame ?? f} setup={setup} />
+          <details className="analysis-notes">
+            <summary>Telemetry recorder</summary>
+            <Telemetry
+              samples={snapshot?.samples ?? run.samples}
+              units={prefs.units}
+              preview={preview}
+              board={equipmentFor(setup.technique) === 'snowboard'}
+            />
+            <TelemetryHelp
+              board={equipmentFor(setup.technique) === 'snowboard'}
+            />
+          </details>
+        </Modal>
+      )}
+      {dialog === 'technique-lab' && (
+        <Modal
+          title="Technique lab"
+          aria-label="Technique lab"
+          wide
+          onClose={close}
+        >
+          <Lab
+            setup={setup}
+            id={labId}
+            select={setLabId}
+            practice={practice}
+            units={prefs.units}
+          />
+        </Modal>
+      )}
+      {dialog === 'run-log' && !review && (
+        <Modal title="Run log" aria-label="Run log" wide onClose={close}>
+          <Log
+            runs={runs}
+            open={setReview}
+            practice={close}
+            units={prefs.units}
+          />
+        </Modal>
+      )}
+      {review && (
+        <Modal
+          title={dialog === 'run-log' ? 'Run details' : 'Run review'}
+          onClose={() => setReview(null)}
+        >
+          <RunDetails
+            record={review}
+            units={prefs.units}
+            again={() => {
+              configure(review.setup)
+              start()
+            }}
+            close={() => setReview(null)}
+          />
+          {!saved && (
+            <p className="fine-print">
+              Storage is unavailable. This run is available for the current
+              visit.
+            </p>
+          )}
         </Modal>
       )}
       {dialog === 'settings' && (
-        <Modal title="Settings" onClose={() => setDialog(null)}>
+        <Modal title="Settings" onClose={close}>
           <div className="settings-content">
             <div className="setting-group">
               <span className="field-label">Display units</span>
               <SchemeTabs<Prefs['units']>
-                label="Display units"
                 value={prefs.units}
+                label="Display units"
                 items={[
                   { id: 'metric', name: 'Metric · km/h' },
                   { id: 'imperial', name: 'Imperial · mph' },
@@ -396,15 +553,16 @@ export default function App() {
               />
             </div>
             <div className="setting-group">
-              <Toggle
-                label="Slope audio"
-                on={prefs.sound}
-                change={soundToggle}
-              />
+              <Toggle label="Slope audio" on={prefs.sound} change={sound} />
               <Toggle
                 label="Always show touch controls"
                 on={prefs.touch}
                 change={() => setPrefs((p) => ({ ...p, touch: !p.touch }))}
+              />
+              <Toggle
+                label="Show gate line"
+                on={prefs.line}
+                change={() => setPrefs((p) => ({ ...p, line: !p.line }))}
               />
             </div>
             <div className="install-card">
@@ -415,53 +573,33 @@ export default function App() {
                 <h3>Fallline offline</h3>
                 <p>
                   {offline.cached
-                    ? 'Courses, audio, and lessons are saved for offline practice.'
-                    : 'The production app saves courses and lessons on the first visit for offline practice.'}
+                    ? 'The mountain, equipment, and lessons are cached on this device.'
+                    : 'The production app caches its courses and lessons on your first visit.'}
                 </p>
               </div>
             </div>
             {offline.installed ? (
               <p className="installed">
-                <Check size={15} />
+                <Check size={14} />
                 App installed
               </p>
             ) : offline.canInstall ? (
               <button className="outline-btn" onClick={offline.install}>
-                <Download size={15} />
+                <Download size={14} />
                 Install Fallline
               </button>
             ) : (
               <details className="install-help">
                 <summary>Install on this device</summary>
                 <p>
-                  In Chrome or Edge, choose Install app from the browser menu.
-                  In Safari on iPhone or iPad, open Share and choose Add to Home
-                  Screen.
+                  Choose Install app from the browser menu. On iPhone or iPad,
+                  open Share in Safari and choose Add to Home Screen.
                 </p>
               </details>
             )}
           </div>
         </Modal>
       )}
-      {review && (
-        <Modal
-          title={page === 'run-log' ? 'Run details' : 'Run review'}
-          onClose={() => setReview(null)}
-        >
-          <RunDetails
-            record={review}
-            units={prefs.units}
-            again={() => startWith(review.setup)}
-            close={() => setReview(null)}
-          />
-          {!storageOk && (
-            <p role="status" className="fine-print">
-              Device storage is unavailable. This run is available for the
-              current visit.
-            </p>
-          )}
-        </Modal>
-      )}
-    </>
+    </main>
   )
 }

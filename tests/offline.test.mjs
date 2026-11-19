@@ -59,9 +59,28 @@ test(
       ['bowl', 'glacier-bowl.webp'],
       ['meadow', 'pine-meadow.webp'],
     ]) {
-      await page.locator('#terrain').selectOption(id)
+      await page.getByRole('button', { name: 'Run setup', exact: true }).click()
+      await page.locator('[data-course="' + id + '"]').click()
+      if (id === 'meadow') {
+        await page
+          .getByRole('button', { name: 'Snowboard', exact: true })
+          .click()
+        await page.locator('#technique').selectOption('boardSkid')
+        await page.getByRole('button', { name: 'Powder', exact: true }).click()
+      }
+      await page.getByRole('button', { name: 'Apply setup' }).click()
       await imageLoaded(file)
     }
+    await page.waitForSelector(
+      '.mountain-canvas canvas[data-renderer="canvas"]',
+    )
+    await page
+      .getByRole('combobox', { name: 'Camera view' })
+      .selectOption('edge')
+    await page.getByRole('button', { name: 'Expand force analysis' }).click()
+    await page.getByRole('button', { name: 'Contact', exact: true }).click()
+    assert.match(await page.locator('.load-split').innerText(), /Binding load/i)
+    await page.getByRole('button', { name: 'Collapse force analysis' }).click()
     await page.getByRole('button', { name: 'Start run' }).click()
     await page.waitForFunction(
       () =>
@@ -71,6 +90,20 @@ test(
     assert.ok(
       await page.getByRole('button', { name: 'Steer left' }).isVisible(),
     )
+    const left = page.getByRole('button', { name: 'Steer left' })
+    const position = await left.boundingBox()
+    await page.mouse.move(
+      position.x + position.width / 2,
+      position.y + position.height / 2,
+    )
+    await page.mouse.down()
+    await page.waitForFunction(
+      () =>
+        Number.parseInt(
+          document.querySelector('.secondary-reading b').textContent,
+        ) > 12,
+    )
+    await page.mouse.up()
     await page.getByRole('button', { name: 'End run', exact: true }).click()
     await page.waitForFunction(
       () =>
@@ -79,6 +112,7 @@ test(
     await page.reload()
     await page.getByRole('link', { name: 'Run log', exact: true }).click()
     assert.match(await page.locator('.log-table').innerText(), /Pine Meadow/)
+    assert.match(await page.locator('.log-table').innerText(), /Skidded turns/)
     assert.deepEqual(errors, [])
   },
 )

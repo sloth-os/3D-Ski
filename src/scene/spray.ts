@@ -2,7 +2,7 @@ import * as THREE from 'three'
 import type { SurfaceId } from '../course.ts'
 import type { Frame } from '../physics.ts'
 
-export function makeSpray(surface: SurfaceId) {
+export function makeSpray(surface: SurfaceId, board: boolean) {
   const count = 160,
     positions = new Float32Array(count * 3),
     velocities = new Float32Array(count * 3),
@@ -71,15 +71,20 @@ export function makeSpray(surface: SurfaceId) {
               ? 1
               : -1
             : -(Math.sign(f.edge) || 1)
-      positions[k] = pos.x + outside * (0.16 + Math.random() * 0.08)
+      const yaw = f.heading + f.boardYaw
+      const offset = outside * ((board ? 0.11 : 0.18) + Math.random() * 0.08)
+      positions[k] = pos.x + Math.cos(yaw) * offset - Math.sin(yaw) * 0.38
       positions[k + 1] = pos.y + 0.13
-      positions[k + 2] = pos.z + 0.37
+      positions[k + 2] = pos.z + Math.cos(yaw) * 0.38 + Math.sin(yaw) * offset
       velocities[k] =
-        outside * (0.45 + Math.random() * 2) * amount +
+        outside * Math.cos(yaw) * (0.45 + Math.random() * 2) * amount +
         Math.sin(f.heading) * f.speed * 0.32
       velocities[k + 1] =
         0.4 + Math.random() * 1.75 - Math.sin(pitch) * f.speed * 0.16
-      velocities[k + 2] = 0.65 - Math.cos(f.heading) * f.speed * 0.24
+      velocities[k + 2] =
+        0.65 +
+        outside * Math.sin(yaw) * amount -
+        Math.cos(f.heading) * f.speed * 0.24
       lives[j] = 0.29 + Math.random() * 0.35
     }
     geometry.attributes.position.needsUpdate = true

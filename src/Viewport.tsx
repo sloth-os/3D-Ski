@@ -1,567 +1,283 @@
-import { useCallback, useEffect, useId, useRef, useState } from 'react'
-import {
-  ArrowDownRight,
-  ArrowLeft,
-  ArrowRight,
-  ArrowUp,
-  Camera,
-  Check,
-  ChevronDown,
-  ChevronsDown,
-  Flag,
-  LoaderCircle,
-  MapPin,
-  Maximize,
-  Minimize,
-  MountainSnow,
-  Pause,
-  Play,
-  Route,
-  ScanLine,
-  Square,
-  Timer,
-  Trophy,
-  Volume2,
-  VolumeX,
-} from 'lucide-react'
-import { courses, type Setup } from './course.ts'
-import { clamp, emptyFrame, lineAt, type Frame, type Gate } from './physics.ts'
+import { useEffect, useRef, type RefObject } from 'react'
+import { Flag } from 'lucide-react'
+import { courses, equipmentFor, type Setup } from './course.ts'
+import { analyse, riderPose, type Lens } from './analysis.ts'
+import { clamp } from './physics.ts'
+import type { CameraMode, ScreenPoint, ViewOptions } from './cameras.ts'
+import type { MountainView } from './mountain.ts'
 import { canvasMountain } from './scene/canvas.ts'
-import type { CameraMode, MountainView, ViewOptions } from './mountain.ts'
-import { duration, lengthText, type Prefs } from './storage.ts'
 import type { TrainingRun } from './useRun.ts'
+import { lengthText, type Prefs } from './storage.ts'
 
-const cameraLabels: Record<CameraMode, string> = {
-  chase: 'Chase cam',
-  wide: 'Trail cam',
-  first: 'Skier view',
+function setAnchor(
+  el: HTMLDivElement | null,
+  p: ScreenPoint,
+  show: boolean,
+  width: number,
+) {
+  if (!el) return
+  el.style.visibility = show && p.visible ? 'visible' : 'hidden'
+  const rightFacing = el.classList.contains('upper')
+  if (el.classList.contains('annotation'))
+    el.dataset.flip = String(
+      rightFacing
+        ? p.x * width > width - (width < 651 ? 112 : 175)
+        : p.x * width < (width < 651 ? 113 : 152),
+    )
+  el.style.left = (100 * p.x).toFixed(2) + '%'
+  el.style.top = (100 * p.y).toFixed(2) + '%'
 }
-
-function TrailMap({
-  gates,
-  frame,
-  length,
-  guide,
-  preview,
-}: {
-  gates: Gate[]
-  frame: Frame
-  length: number
-  guide: boolean
-  preview: boolean
-}) {
-  const project = (d: number, x: number) => [
-    22 + (d / length) * 65 + x * 0.57,
-    75 - (d / length) * 64 + x * 0.17,
-  ]
-  const line = Array.from({ length: 110 }, (_, i) => {
-    const d = (i / 109) * length
-    return project(d, lineAt(gates, d)).join(',')
-  }).join(' ')
-  const [x, y] = project(preview ? 0 : frame.d, preview ? 0 : frame.x)
-  return (
-    <div
-      className="trail-map"
-      aria-label={
-        'Trail map, ' +
-        (preview
-          ? 'start of course'
-          : Math.round((frame.d / length) * 100) + ' percent complete')
-      }
-    >
-      <span className="map-label">
-        <Route size={11} /> Trail map
-      </span>
-      <svg
-        viewBox="0 0 110 83"
-        aria-hidden="true"
-        preserveAspectRatio="xMidYMid meet"
-      >
-        <g fill="none" stroke="#c2d9e5" opacity=".16" strokeWidth=".7">
-          {Array.from({ length: 12 }, (_, i) => (
-            <path
-              key={i}
-              d={
-                'M' +
-                (-45 + i * 9) +
-                ' -5c23 23 0 25 16 40s27 6 35 25 -3 20 14 34'
-              }
-            />
-          ))}
-        </g>
-        {guide && (
-          <>
-            <polyline
-              points={line}
-              fill="none"
-              stroke="rgba(6,27,34,.5)"
-              strokeWidth="4"
-              strokeLinejoin="round"
-            />
-            <polyline
-              points={line}
-              fill="none"
-              stroke="#80e6cd"
-              strokeWidth="1.65"
-              strokeLinejoin="round"
-              strokeLinecap="round"
-            />
-          </>
-        )}
-        <circle
-          cx="87"
-          cy="11"
-          r="2.9"
-          fill="#e1f2ed"
-          stroke="#173836"
-          strokeWidth="1"
-        />
-        <circle cx={x} cy={y} r="6.1" fill="#47e1b9" opacity=".21" />
-        <circle
-          cx={x}
-          cy={y}
-          r="3.25"
-          fill="#69f3ca"
-          stroke="#e4fff8"
-          strokeWidth="1.2"
-        />
-      </svg>
-    </div>
-  )
+function compass(canvas: HTMLCanvasElement | null, bearing: number) {
+  if (!canvas) return
+  const ctx = canvas.getContext('2d')
+  if (!ctx) return
+  const w = 288,
+    h = 40,
+    dpr = Math.min(2, window.devicePixelRatio || 1)
+  if (canvas.width !== w * dpr || canvas.height !== h * dpr) {
+    canvas.width = w * dpr
+    canvas.height = h * dpr
+  }
+  ctx.setTransform(dpr, 0, 0, dpr, 0, 0)
+  ctx.clearRect(0, 0, w, h)
+  ctx.textAlign = 'center'
+  const names = ['N', 'NE', 'E', 'SE', 'S', 'SW', 'W', 'NW']
+  for (let d = Math.floor((bearing - 52) / 5) * 5; d <= bearing + 52; d += 5) {
+    const x = w / 2 + (d - bearing) * 2.9,
+      n = (d + 360) % 360
+    ctx.fillStyle =
+      'rgba(239,248,250,' +
+      Math.min(0.87, 1 - Math.abs(x - w / 2) / (w * 0.57)) +
+      ')'
+    ctx.fillRect(x, 21, 1, n % 15 === 0 ? 8 : 4)
+    if (n % 15 === 0 && Math.abs(x - w / 2) > 23) {
+      ctx.font = n % 45 === 0 ? 'bold 10px sans-serif' : '9px monospace'
+      ctx.fillText(n % 45 === 0 ? names[n / 45] : String(n), x, 15)
+    }
+  }
+  ctx.fillStyle = '#d4f59b'
+  ctx.font = 'bold 12px monospace'
+  ctx.fillText((Math.round(bearing) % 360) + '°', w / 2, 16)
+  ctx.beginPath()
+  ctx.moveTo(w / 2 - 3, 32)
+  ctx.lineTo(w / 2 + 3, 32)
+  ctx.lineTo(w / 2, 27)
+  ctx.fill()
 }
 type Props = {
   run: TrainingRun
   setup: Setup
   prefs: Prefs
-  toggleSound: () => void
   camera: CameraMode
-  setCamera: (c: CameraMode) => void
-  inspect: boolean
-  setInspect: (v: boolean) => void
-  watch: () => void
+  lens: Lens
+  blocked: boolean
+  compassRef: RefObject<HTMLCanvasElement | null>
+  resetView: number
+  details: () => void
 }
 export function Viewport({
   run,
   setup,
   prefs,
-  toggleSound,
   camera,
-  setCamera,
-  inspect,
-  setInspect,
-  watch,
+  lens,
+  blocked,
+  compassRef,
+  resetView,
+  details,
 }: Props) {
-  const c = courses[setup.course],
-    preview = run.phase === 'preview',
-    active3D = !preview || inspect
   const holder = useRef<HTMLDivElement>(null),
-    viewport = useRef<HTMLDivElement>(null),
-    scene = useRef<MountainView | null>(null)
-  const [loaded, setLoaded] = useState(false),
-    [full, setFull] = useState(false),
-    [fallbackFull, setFallbackFull] = useState(false)
-  const [orbit, setOrbit] = useState(0),
-    drag = useRef<number | null>(null)
+    upper = useRef<HTMLDivElement>(null),
+    lower = useRef<HTMLDivElement>(null),
+    gate = useRef<HTMLDivElement>(null)
+  const hand = useRef({ orbit: 0, tilt: 0, zoom: 1 }),
+    drag = useRef<{ id: number; x: number; y: number } | null>(null)
+  const config = useRef({ camera, lens, prefs, phase: run.phase, blocked })
+  config.current = { camera, lens, prefs, phase: run.phase, blocked }
+  const { ready, current } = run
   useEffect(() => {
-    if (run.phase === 'running' || run.phase === 'demo') {
-      viewport.current?.focus({ preventScroll: true })
-    }
-  }, [run.phase])
-  const cameraId = useId(),
-    phaseRef = useRef(run.phase)
-  phaseRef.current = run.phase
-  const opts = useRef<ViewOptions>({
-    camera,
-    line: prefs.line,
-    forces: prefs.forces,
-    orbit,
-  })
-  opts.current = { camera, line: prefs.line, forces: prefs.forces, orbit }
-  const starter = useRef(emptyFrame())
-  const { draw, ready, current, keys } = run
-  const render = useCallback(
-    (f: Frame) => scene.current?.draw(f, opts.current),
-    [],
-  )
+    hand.current = { orbit: 0, tilt: 0, zoom: 1 }
+  }, [camera, resetView, setup])
   useEffect(() => {
-    if (!active3D) return
-    let closed = false
-    setLoaded(false)
+    const host = holder.current!
+    let dead = false,
+      view: MountainView | undefined,
+      raf = 0,
+      last = 0,
+      oldBearing = -1
+    const reduced = matchMedia('(prefers-reduced-motion: reduce)')
     ready.current = false
-    import('./mountain.ts')
-      .then(
-        (module) => module.createMountain,
+    host.dataset.loaded = 'false'
+    async function mount() {
+      const create = await import('./mountain.ts').then(
+        (m) => m.createMountain,
         () => canvasMountain,
       )
-      .then((createView) => {
-        if (closed || !holder.current) return
-        scene.current = createView(holder.current, setup)
-        draw.current = render
-        render(
-          phaseRef.current === 'preview' ? starter.current : current.current,
-        )
-        ready.current = true
-        setLoaded(true)
-      })
+      if (dead) return
+      view = create(host, setup)
+      host.dataset.loaded = 'true'
+      ready.current = true
+      const loop = (now: number) => {
+        if (dead) return
+        const cfg = config.current,
+          free = cfg.phase === 'preview',
+          idle = free || cfg.phase === 'paused'
+        if (
+          !document.hidden &&
+          (!last || now - last > (cfg.blocked ? 175 : idle ? 30 : 0))
+        ) {
+          const options: ViewOptions = {
+            camera: cfg.camera,
+            lens: cfg.lens,
+            forces: cfg.prefs.forces,
+            line: cfg.prefs.line,
+            ...hand.current,
+            preview: free,
+            reduced: reduced.matches,
+          }
+          const result = view!.draw(current.current, options)
+          const labels =
+            cfg.prefs.forces &&
+            !cfg.blocked &&
+            cfg.camera !== 'first' &&
+            cfg.camera !== 'aerial'
+          setAnchor(upper.current, result.upper, labels, host.clientWidth)
+          setAnchor(lower.current, result.lower, labels, host.clientWidth)
+          setAnchor(
+            gate.current,
+            result.gate,
+            !cfg.blocked && cfg.prefs.line && !free,
+            host.clientWidth,
+          )
+          if (oldBearing !== Math.round(result.bearing)) {
+            oldBearing = Math.round(result.bearing)
+            compass(compassRef.current, result.bearing)
+          }
+          last = now
+        }
+        raf = requestAnimationFrame(loop)
+      }
+      raf = requestAnimationFrame(loop)
+    }
+    void mount()
+    const wheel = (e: WheelEvent) => {
+      if (config.current.blocked || config.current.camera === 'first') return
+      e.preventDefault()
+      hand.current.zoom = clamp(
+        hand.current.zoom * Math.exp(e.deltaY * 0.0012),
+        0.59,
+        1.85,
+      )
+    }
+    host.addEventListener('wheel', wheel, { passive: false })
     return () => {
-      closed = true
+      dead = true
+      cancelAnimationFrame(raf)
       ready.current = false
-      draw.current = null
-      scene.current?.dispose()
-      scene.current = null
+      view?.dispose()
+      host.removeEventListener('wheel', wheel)
     }
-  }, [active3D, setup, render, draw, ready, current])
-  useEffect(() => {
-    if (active3D) render(preview ? starter.current : current.current)
-  }, [
-    active3D,
-    preview,
-    render,
-    current,
-    camera,
-    orbit,
-    prefs.line,
-    prefs.forces,
-    loaded,
-  ])
-  useEffect(() => {
-    setOrbit(0)
-  }, [camera, setup.course, run.phase === 'running'])
-  useEffect(() => {
-    const update = () =>
-      setFull(document.fullscreenElement === viewport.current)
-    document.addEventListener('fullscreenchange', update)
-    return () => document.removeEventListener('fullscreenchange', update)
-  }, [])
-  useEffect(() => {
-    if (!fallbackFull) return
-    const old = document.body.style.overflow
-    document.body.style.overflow = 'hidden'
-    const key = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') setFallbackFull(false)
-    }
-    window.addEventListener('keydown', key)
-    return () => {
-      document.body.style.overflow = old
-      window.removeEventListener('keydown', key)
-    }
-  }, [fallbackFull])
-  async function fullscreen() {
-    try {
-      if (fallbackFull) {
-        setFallbackFull(false)
-        return
-      }
-      if (document.fullscreenElement) await document.exitFullscreen()
-      else if (viewport.current?.requestFullscreen)
-        await viewport.current.requestFullscreen()
-      else setFallbackFull(true)
-    } catch {
-      setFallbackFull(true)
-    }
-  }
-  const changeCamera = (value: CameraMode) => {
-    setCamera(value)
-    if (preview) setInspect(true)
-  }
-  const touchButton = (key: string, label: string, icon: React.ReactNode) => (
-    <button
-      type="button"
-      aria-label={label}
-      onPointerDown={(e) => {
-        e.preventDefault()
-        e.currentTarget.setPointerCapture(e.pointerId)
-        keys.current.add(key)
-      }}
-      onPointerUp={() => keys.current.delete(key)}
-      onPointerCancel={() => keys.current.delete(key)}
-      onLostPointerCapture={() => keys.current.delete(key)}
-    >
-      {icon}
-    </button>
-  )
+  }, [setup, ready, current, compassRef])
   const f = run.frame,
-    g = run.gates[f.gatesSeen],
-    hitNow = !preview && f.t - f.lastGateTime < 1.75
-  const allowOrbit =
-    active3D &&
-    run.phase !== 'running' &&
-    run.phase !== 'demo' &&
-    camera !== 'first'
+    a = analyse(f, setup),
+    p = riderPose(f, setup),
+    board = equipmentFor(setup.technique) === 'snowboard'
+  const labels =
+    lens === 'forces'
+      ? [
+          ['Snow reaction', Math.round(a.reactionN) + ' N'],
+          ['Gravity', Math.round(a.weightN) + ' N'],
+        ]
+      : lens === 'body'
+        ? [
+            ['Center of mass', p.com[1].toFixed(2) + ' m'],
+            ['Knee flexion', Math.round(p.legs[p.outside].angle) + '°'],
+          ]
+        : [
+            [
+              board ? 'Front binding' : 'Left ski',
+              Math.round(a.contacts[0]) + ' N',
+            ],
+            [
+              board ? 'Rear binding' : 'Right ski',
+              Math.round(a.contacts[1]) + ' N',
+            ],
+          ]
   return (
-    <div
-      className={
-        'viewport' +
-        (fallbackFull ? ' expanded' : '') +
-        (full ? ' fullscreen' : '') +
-        (preview ? ' standby' : ' in-run')
-      }
-      ref={viewport}
-      role="region"
-      tabIndex={-1}
-      aria-label="Ski course viewport"
-      data-testid="course-viewport"
-    >
-      <div className="scene-area">
-        <img
-          className={'course-poster ' + (active3D && loaded ? 'hidden' : '')}
-          src={import.meta.env.BASE_URL + c.image}
-          alt={c.name + ' ski course in the Swiss Alps'}
-          aria-hidden={active3D && loaded}
-          fetchPriority="high"
-          draggable={false}
-        />
-        {active3D && (
-          <div
-            ref={holder}
-            className={'mountain-canvas ' + (allowOrbit ? 'orbit-enabled' : '')}
-            aria-label="Interactive 3D skiing scene"
-            onPointerDown={(e) => {
-              if (allowOrbit) {
-                drag.current = e.clientX
-                e.currentTarget.setPointerCapture(e.pointerId)
-              }
-            }}
-            onPointerMove={(e) => {
-              if (drag.current !== null) {
-                const dx = e.clientX - drag.current
-                drag.current = e.clientX
-                setOrbit((v) => clamp(v + dx * 0.008, -1.17, 1.17))
-              }
-            }}
-            onPointerUp={() => {
-              drag.current = null
-            }}
-            onPointerCancel={() => {
-              drag.current = null
-            }}
+    <div className="world" aria-label="Interactive mountain">
+      <img
+        className="course-poster"
+        src={import.meta.env.BASE_URL + courses[setup.course].image}
+        alt={courses[setup.course].name + ' in the Swiss Alps'}
+        fetchPriority="high"
+      />
+      <div
+        className="mountain-canvas"
+        ref={holder}
+        aria-label="3D slope. Drag to orbit and scroll to zoom."
+        onPointerDown={(e) => {
+          if (blocked || camera === 'first') return
+          drag.current = { id: e.pointerId, x: e.clientX, y: e.clientY }
+          e.currentTarget.setPointerCapture(e.pointerId)
+          e.currentTarget.focus({ preventScroll: true })
+        }}
+        onPointerMove={(e) => {
+          const d = drag.current
+          if (!d || d.id !== e.pointerId) return
+          hand.current.orbit += (e.clientX - d.x) * 0.006
+          hand.current.tilt = clamp(
+            hand.current.tilt + (e.clientY - d.y) * 0.003,
+            -0.28,
+            1.02,
+          )
+          d.x = e.clientX
+          d.y = e.clientY
+        }}
+        onPointerUp={() => {
+          drag.current = null
+        }}
+        onPointerCancel={() => {
+          drag.current = null
+        }}
+        onLostPointerCapture={() => {
+          drag.current = null
+        }}
+        tabIndex={-1}
+      >
+        {setup.course === 'ridge' && (
+          <img
+            className="trailhead-plate"
+            src={import.meta.env.BASE_URL + 'images/trailhead.webp'}
+            alt=""
+            draggable={false}
           />
         )}
-        <div className={'viewport-shade ' + (preview ? '' : 'mild')} />
-        <div className="view-top">
-          <div
-            className={
-              'view-status ' +
-              (!preview && run.phase === 'running' ? 'live' : '')
-            }
-          >
-            <i />
-            {preview
-              ? 'Course preview'
-              : run.phase === 'paused'
-                ? 'Paused'
-                : run.phase === 'demo'
-                  ? 'Technique demo'
-                  : 'Run active'}
-          </div>
-          <div className="view-tools">
-            {!preview && run.phase !== 'demo' && (
-              <button
-                className="glass-icon"
-                aria-label={
-                  run.phase === 'running' ? 'Pause run' : 'Resume run'
-                }
-                title={run.phase === 'running' ? 'Pause run' : 'Resume run'}
-                onClick={run.phase === 'running' ? run.pause : run.resume}
-              >
-                {run.phase === 'running' ? <Pause /> : <Play />}
-              </button>
-            )}
-            <button
-              className="glass-icon"
-              aria-label={prefs.sound ? 'Mute audio' : 'Enable audio'}
-              title={prefs.sound ? 'Mute audio' : 'Enable audio'}
-              aria-pressed={prefs.sound}
-              onClick={toggleSound}
-            >
-              {prefs.sound ? <Volume2 /> : <VolumeX />}
-            </button>
-            <button
-              className="glass-icon"
-              aria-label={
-                full || fallbackFull ? 'Exit fullscreen' : 'Enter fullscreen'
-              }
-              title="Fullscreen"
-              onClick={fullscreen}
-            >
-              {full || fallbackFull ? <Minimize /> : <Maximize />}
-            </button>
-          </div>
-        </div>
-        {active3D && !loaded && (
-          <span className="scene-loader">
-            <LoaderCircle size={19} /> Loading course
-          </span>
-        )}
-        {preview ? (
-          <div className="course-caption">
-            <div className="difficulty">
-              <i className={'slope-symbol ' + c.symbol} />
-              {c.level}
-            </div>
-            <h2>{c.name}</h2>
-            <div className="location">
-              <span>
-                <MapPin />
-                {c.region}
-              </span>
-              <b />
-              <span>
-                <MountainSnow />
-                {lengthText(c.altitude, prefs.units)}
-              </span>
-            </div>
-          </div>
-        ) : (
-          <div className="game-readout">
-            <div className="readout-speed">
-              {Math.round(f.speed * (prefs.units === 'metric' ? 3.6 : 2.23694))}
-              <small>{prefs.units === 'metric' ? 'km/h' : 'mph'}</small>
-            </div>
-            <div className="hud-small">
-              <Timer size={13} />
-              {duration(f.t)}
-              <i /> <Trophy size={13} />
-              {f.points} pts
-            </div>
-          </div>
-        )}
-        {!preview && (
-          <div className={'gate-target' + (hitNow ? ' gate-result' : '')}>
-            {hitNow ? (
-              f.lastGateHit ? (
-                <>
-                  <Check size={15} /> Gate cleared +100
-                </>
-              ) : (
-                <>
-                  <Flag size={14} /> Gate missed
-                </>
-              )
-            ) : g ? (
-              <>
-                <Flag size={14} /> Gate {f.gatesSeen + 1} / {c.gates}
-                <span>{lengthText(Math.max(0, g.d - f.d), prefs.units)}</span>
-                {Math.abs(g.x - f.x) > g.width ? (
-                  g.x > f.x ? (
-                    <ArrowRight size={13} aria-label="Gate to the right" />
-                  ) : (
-                    <ArrowLeft size={13} aria-label="Gate to the left" />
-                  )
-                ) : (
-                  <Check size={13} aria-label="Aligned with gate" />
-                )}
-              </>
-            ) : (
-              <>
-                <Flag size={14} /> Finish line
-              </>
-            )}
-          </div>
-        )}
-        {active3D && prefs.forces && (
-          <div className="vector-key">
-            <span>
-              <i />
-              Snow reaction
-            </span>
-            <span>
-              <i />
-              Gravity
-            </span>
-          </div>
-        )}
-        <TrailMap
-          gates={run.gates}
-          frame={f}
-          length={c.length}
-          guide={prefs.line}
-          preview={preview}
-        />
-        {run.phase === 'running' && (
-          <div className={'touch-controls ' + (prefs.touch ? 'forced' : '')}>
-            <div>
-              {touchButton('left', 'Steer left', <ArrowLeft />)}
-              {touchButton('right', 'Steer right', <ArrowRight />)}
-            </div>
-            <div>
-              {touchButton('tuck', 'Tuck', <ArrowUp />)}
-              {touchButton('flex', 'Flex legs', <ChevronsDown />)}
-              {touchButton('brake', 'Brake', <span>Brake</span>)}
-            </div>
-          </div>
-        )}
-        {run.phase === 'paused' && (
-          <div className="pause-layer">
-            <div>
-              <span className="pause-icon">
-                <Pause />
-              </span>
-              <h3>Run paused</h3>
-              <p>
-                {c.name} · {lengthText(f.d, prefs.units)} skied
-              </p>
-              <button className="primary" onClick={run.resume}>
-                <Play size={16} fill="currentColor" />
-                Resume run
-              </button>
-              <button className="text-btn" onClick={run.end}>
-                End run &amp; review
-              </button>
-            </div>
-          </div>
-        )}
       </div>
-      <div className="view-foot">
-        <div className="view-foot-left">
-          <div className="cam-select">
-            <Camera size={15} />
-            <select
-              id={cameraId}
-              value={camera}
-              aria-label="Camera view"
-              onChange={(e) => changeCamera(e.target.value as CameraMode)}
-            >
-              {Object.entries(cameraLabels).map(([v, n]) => (
-                <option key={v} value={v}>
-                  {n}
-                </option>
-              ))}
-            </select>
-            <ChevronDown size={12} />
-          </div>
-          {(preview || run.phase === 'demo') && (
-            <button
-              className="watch-demo"
-              onClick={run.phase === 'demo' ? run.end : watch}
-            >
-              {run.phase === 'demo' ? <Square size={11} /> : <Play size={12} />}{' '}
-              {run.phase === 'demo' ? 'Stop demo' : 'Watch demo'}
-            </button>
+      <div className="world-vignette" />
+      <div className={'annotation upper ' + lens} ref={upper}>
+        <i />
+        <button onClick={details}>
+          <span>{labels[0][0]}</span>
+          <b>{labels[0][1]}</b>
+        </button>
+      </div>
+      <div className={'annotation lower ' + lens} ref={lower}>
+        <i />
+        <button onClick={details}>
+          <span>{labels[1][0]}</span>
+          <b>{labels[1][1]}</b>
+        </button>
+      </div>
+      <div className="world-gate" ref={gate}>
+        <Flag size={12} />
+        {f.gatesSeen + 1}
+        <b>
+          {lengthText(
+            Math.max(0, (run.gates[f.gatesSeen]?.d ?? f.d) - f.d),
+            prefs.units,
           )}
-        </div>
-        <div className="scene-specs">
-          {inspect && preview ? (
-            <button
-              className="text-btn preview-reset"
-              onClick={() => {
-                setInspect(false)
-                setCamera('chase')
-              }}
-            >
-              <ScanLine size={14} /> Course photo
-            </button>
-          ) : null}
-          <span>
-            <ArrowDownRight />
-            {c.pitch}° pitch
-          </span>
-          <i />
-          <span>
-            <Route />
-            {lengthText(c.length, prefs.units)}
-          </span>
-        </div>
+        </b>
+        <span>▾</span>
       </div>
     </div>
   )

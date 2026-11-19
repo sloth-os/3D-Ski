@@ -189,8 +189,72 @@ export const techniques = {
     watch:
       'Look for evenly spaced edge-angle peaks and fewer jumps in pressure as you absorb the rollers.',
   },
+  boardCarve: {
+    name: 'Edge-to-edge carve',
+    category: 'Snowboard edging',
+    edge: [23, 48],
+    sidecut: 8.6,
+    response: 0.87,
+    cue: 'Move your center of mass across the board and build pressure on the new edge.',
+    objective:
+      'Link toe-side and heel-side arcs with a progressive edge change.',
+    phases: [
+      [
+        'Release',
+        'Flex through the ankles and knees to release the old edge and bring the board flatter.',
+      ],
+      [
+        'Tip',
+        'Move the body across the board. Engage the new edge smoothly while both feet stay connected to the deck.',
+      ],
+      [
+        'Shape',
+        'Allow the sidecut to guide the board across the fall line, then soften the legs for the next transition.',
+      ],
+    ],
+    drill:
+      'In the regular stance, steer right to engage the toe edge and left to engage the heel edge. Ease off between arcs.',
+    watch:
+      'Follow the pressure markers under the bindings as the board rolls from one edge to the other.',
+  },
+  boardSkid: {
+    name: 'Skidded turns',
+    category: 'Snowboard speed control',
+    edge: [10, 31],
+    sidecut: 9.4,
+    response: 0.98,
+    cue: 'Pivot the board across your direction of travel and regulate grip with edge angle.',
+    objective:
+      'Manage speed by blending edge tilt and controlled sideways slip.',
+    phases: [
+      [
+        'Flatten',
+        'Soften both legs and reduce board tilt while keeping the hips over the feet.',
+      ],
+      [
+        'Pivot',
+        'Guide the board across the hill through the feet and legs. Keep the arms quiet.',
+      ],
+      [
+        'Regulate',
+        'Use the uphill edge to control the slide. Ease pressure progressively as you change direction.',
+      ],
+    ],
+    drill:
+      'Use the brake while steering. Compare the resistance vector with a clean carved turn on the same surface.',
+    watch:
+      'Observe the angle between board heading and travel, the change in speed, and the front-to-rear load distribution.',
+  },
 } as const
 export type TechniqueId = keyof typeof techniques
+export type Equipment = 'skis' | 'snowboard'
+export function equipmentFor(id: TechniqueId): Equipment {
+  return id === 'boardCarve' || id === 'boardSkid' ? 'snowboard' : 'skis'
+}
+export const equipmentName = {
+  skis: 'Alpine skis',
+  snowboard: 'Snowboard',
+} as const
 export type Setup = {
   course: CourseId
   technique: TechniqueId
@@ -203,6 +267,12 @@ export const defaultSetup: Setup = {
 }
 
 export const references = [
+  {
+    title: 'Snowboarding Fundamentals',
+    publisher: 'AASI · Snowboard Certification Standards',
+    url: 'https://thesnowpros.org/wp-content/uploads/2025/10/AASI_Snowboard_Standards0224_updated_100325_v3.pdf',
+    note: 'Board tilt, pivot, pressure along and across the board, and independent movements of the upper and lower body inform the snowboard drills.',
+  },
   {
     title: 'Alpine Skiing Fundamentals',
     publisher: 'PSIA-AASI · Alpine Certification Standards',
