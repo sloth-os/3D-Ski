@@ -103,7 +103,13 @@ export function makeLens(scene: THREE.Scene) {
   )
   grip.scale.setScalar(2.9)
   grip.renderOrder = 16
-  body.add(grip)
+  const grabbingArm = new THREE.Group()
+  const shoulder = dots[0].clone(),
+    elbow = dots[0].clone()
+  const upperArm = rod(grabbingArm, lensColors.body, 0.009),
+    forearm = rod(grabbingArm, lensColors.body, 0.009)
+  grabbingArm.add(shoulder, elbow, grip)
+  body.add(grabbingArm)
   const normalArrows = [
       arrow(contact, lensColors.support),
       arrow(contact, lensColors.drag),
@@ -174,9 +180,13 @@ export function makeLens(scene: THREE.Scene) {
         }
         upper.copy(com)
         lower.copy(joints[p.outside * 3 + 1])
-        grip.visible = !!p.grab?.engaged
+        grabbingArm.visible = !!p.grab?.engaged
         if (p.grab?.engaged) {
+          point(shoulder.position, p.grab.shoulder)
+          point(elbow.position, p.grab.elbow)
           point(grip.position, p.grab.point)
+          upperArm(shoulder.position, elbow.position)
+          forearm(elbow.position, grip.position)
           lower.copy(grip.position)
         }
       } else {

@@ -1,6 +1,12 @@
 import { bodyHeading } from './air.ts'
 import * as THREE from 'three'
-import { courses, equipmentFor, type Course, type Setup } from './course.ts'
+import {
+  courses,
+  equipmentFor,
+  isSwitchDrill,
+  type Course,
+  type Setup,
+} from './course.ts'
 import {
   buildGates,
   lineAt,
@@ -11,6 +17,7 @@ import {
 import { analyse, riderPose } from './analysis.ts'
 import {
   cameraShot,
+  travelArrow,
   isTrailhead,
   type Projection,
   type ScreenPoint,
@@ -227,6 +234,19 @@ export function createMountain(
   )
   guide.computeLineDistances()
   scene.add(guide)
+  const arrowGeometry = new THREE.BufferGeometry().setFromPoints(
+    travelArrow.map((p) => new THREE.Vector3(...p)),
+  )
+  arrowGeometry.setIndex([0, 1, 2, 0, 2, 6, 3, 4, 5])
+  const directionMark = new THREE.Mesh(
+    arrowGeometry,
+    new THREE.MeshBasicMaterial({
+      color: 0x65ded0,
+      side: THREE.DoubleSide,
+      toneMapped: false,
+    }),
+  )
+  scene.add(directionMark)
   const skier = skierModel(setup)
   scene.add(skier.root)
   const spray = makeSpray(setup.surface, board)
@@ -297,6 +317,11 @@ export function createMountain(
       sky.position.copy(pos)
       sky.position.y -= 143
       container.dataset.plate = plate ? 'on' : 'off'
+      directionMark.visible =
+        (isSwitchDrill(setup.technique) || f.air.switch || !!f.pivot) &&
+        f.air.phase !== 'flight'
+      directionMark.position.copy(pos)
+      directionMark.rotation.set(-pitch, -f.heading, 0, 'XYZ')
       skier.root.position.copy(pos)
       skier.root.position.y += f.air.height
       skier.root.rotation.set(
@@ -314,7 +339,7 @@ export function createMountain(
       if (!study) spray.update(f, pos, pitch)
       sun.position.copy(pos).add(new THREE.Vector3(-12, 19, -8))
       sun.target.position.copy(pos)
-      const shot = cameraShot(f, c, opt)
+      const shot = cameraShot(f, c, opt, board)
       dest.fromArray(shot.eye)
       aim.fromArray(shot.target)
       const ease = snap ? 1 : 1 - Math.exp(-dt * 6.8)
@@ -342,6 +367,9 @@ export function createMountain(
       camera.getWorldDirection(dest)
       return {
         upper: project(lens.upper),
+        leading: project(
+          aim.fromArray(pose.leadingEnd).applyMatrix4(skier.root.matrixWorld),
+        ),
         lower: project(lens.lower),
         gate: g,
         bearing: (320 + Math.atan2(dest.x, -dest.z) / radians + 360) % 360,

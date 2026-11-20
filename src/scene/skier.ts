@@ -1,7 +1,7 @@
 import * as THREE from 'three'
-import { shoulderLook } from '../air.ts'
+import { shoulderLook, boardHeadYaw } from '../air.ts'
 import { equipmentFor, type Setup } from '../course.ts'
-import { clamp, radians, type Frame } from '../physics.ts'
+import { clamp, type Frame } from '../physics.ts'
 import { type RiderPose, type Point3 } from '../analysis.ts'
 import { makeDeck } from './equipment.ts'
 
@@ -292,21 +292,17 @@ export function skierModel(setup: Setup) {
       p.yaw +
       (board ? 0 : 0.035 * Math.sin(f.t * 1.7) * Math.min(1, f.speed / 5))
     upper.rotation.order = 'YXZ'
-    upper.rotation.set(
-      -0.16 - f.tuck * 0.45 - (board ? 0.13 : 0.03) * p.flex,
-      yaw,
-      -p.lean * 0.36,
-    )
+    upper.rotation.set(p.torso.pitch, yaw, p.torso.roll)
     hips.rotation.set(0, p.hipYaw, -p.lean * 0.13)
     head.rotation.set(
       0.085 + 0.18 * f.tuck,
-      board ? 0.7 : shoulderLook(f) - f.heading * 0.25,
+      board ? boardHeadYaw(f) : 0.62 * shoulderLook(f) - f.heading * 0.25,
       p.lean * 0.13,
     )
-    const edge = f.edge * radians
     if (sharedBoard) {
-      sharedBoard.position.y = 0.035 + 0.148 * Math.abs(Math.sin(edge))
-      sharedBoard.rotation.z = -edge
+      const deck = p.legs[0].deck
+      sharedBoard.position.fromArray(deck.origin)
+      sharedBoard.rotation.set(deck.pitch, deck.yaw, deck.roll, 'YXZ')
     }
     upper.updateWorldMatrix(true, false)
     rootInv.copy(root.matrixWorld).invert()
@@ -347,13 +343,11 @@ export function skierModel(setup: Setup) {
         const weight = p.grab.weight
         for (let axis = 0; axis < 3; axis++)
           hand[axis] += (target.getComponent(axis) - hand[axis]) * weight
-        const high: Point3 = [side * 0.218, 0.423, -0.03]
+        const bend = upper.worldToLocal(
+          handPoint.fromArray(p.grab.elbow).applyMatrix4(root.matrixWorld),
+        )
         for (let axis = 0; axis < 3; axis++)
-          elbow[axis] +=
-            ((high[axis] + hand[axis]) * 0.5 +
-              (axis === 0 ? side * 0.095 : axis === 2 ? -0.085 : 0) -
-              elbow[axis]) *
-            weight
+          elbow[axis] += (bend.getComponent(axis) - elbow[axis]) * weight
       }
       if (p.shifty) {
         hand[0] += p.shifty * 0.11

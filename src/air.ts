@@ -1,7 +1,15 @@
 import type { Course } from './course.ts'
 import type { Frame, Input } from './physics.ts'
 import { clamp, radians, worldHeight } from './slope.ts'
-import { isSpin, usesPose, tricks, type TrickId } from './tricks.ts'
+import {
+  isSpin,
+  usesPose,
+  tricks,
+  popEnd,
+  spinDegrees,
+  requiredSpin,
+  type TrickId,
+} from './tricks.ts'
 
 type Phase = 'ready' | 'load' | 'flight' | 'landing'
 type Landing =
@@ -9,6 +17,7 @@ type Landing =
   | 'Short pop'
   | 'Under-rotated'
   | 'Over-rotated'
+  | 'Opposite spin'
   | 'Pose missed'
   | 'Late release'
   | ''
@@ -41,7 +50,7 @@ export type AirState = {
   points: number
   bestTime: number
 }
-export function initialAir(): AirState {
+export function initialAir(switched = false): AirState {
   return {
     phase: 'ready',
     charge: 0,
@@ -58,8 +67,8 @@ export function initialAir(): AirState {
     pose: 0,
     hold: 0,
     peak: 0,
-    switch: false,
-    startSwitch: false,
+    switch: switched,
+    startSwitch: switched,
     alignedSpin: 0,
     direction: 1,
     impact: 0,
@@ -82,6 +91,13 @@ export function landingSupport(f: Frame) {
 }
 export function bodyHeading(f: Frame) {
   const a = f.air
+  if (f.pivot) {
+    const t = f.pivot.progress
+    return (
+      (a.switch ? Math.PI : 0) +
+      f.pivot.direction * Math.PI * t * t * (3 - 2 * t)
+    )
+  }
   if (a.phase === 'flight') return (a.startSwitch ? Math.PI : 0) + a.spin
   if (a.phase === 'landing') {
     const settle = clamp((f.t - a.landedAt) / compressionTime, 0, 1)
@@ -104,14 +120,46 @@ export function trickPhase(f: Frame) {
   }
 }
 export function shoulderLook(f: Frame) {
-  return 0.55 * (1 - Math.cos(bodyHeading(f)))
+  const amount = f.air.phase === 'flight' ? 1.1 : 2.16
+  return (amount * f.lookSide * (1 - Math.cos(bodyHeading(f)))) / 2
+}
+export function boardHeadYaw(f: Frame) {
+  return 0.9 - 1.04 * (1 - Math.cos(bodyHeading(f)))
+}
+export function foreAftPress(f: Frame, id: string) {
+  const a = f.air,
+    sign = popEnd(id) * (a.switch ? -1 : 1)
+  if (a.phase === 'load') return sign * a.charge
+  if (a.phase === 'flight')
+    return sign * a.charge * Math.max(0, 1 - (2.8 * a.elapsed) / a.duration)
+  return 0
+}
+export function stepPivot(f: Frame, input: Input, dt: number) {
+  if (
+    input.pivot &&
+    !f.pivotHeld &&
+    !f.pivot &&
+    f.air.phase === 'ready' &&
+    !input.jump
+  ) {
+    f.pivot = { progress: 0, direction: Math.sign(input.steer) || 1 }
+  }
+  f.pivotHeld = !!input.pivot
+  if (!f.pivot) return
+  const progress = f.pivot.progress + dt / 0.8
+  if (progress < 1) f.pivot = { ...f.pivot, progress }
+  else {
+    f.air = { ...f.air, switch: !f.air.switch }
+    f.pivot = null
+    f.lastSide = 0
+  }
 }
 function launch(f: Frame, id: TrickId, course: Course, input: Input) {
   const a = f.air,
     pitch = f.pitch * radians
-  const maxPop = id === 'ollie' || id === 'nollie' ? 3.45 : 4.45
+  const maxPop = popEnd(id) ? 3.45 : 4.45
   const pop = maxPop * (0.43 + 0.57 * a.charge)
-  const angle = id === 'spin180' ? Math.PI : id === 'spin360' ? 2 * Math.PI : 0
+  const angle = spinDegrees(id) * radians
   // A weak-drag estimate sets the spin for a full pop on a planar slope.
   // Local terrain curvature and the player's charge change the actual time available.
   const fullPopTime = (2 * maxPop) / 9.81
@@ -138,10 +186,15 @@ function launch(f: Frame, id: TrickId, course: Course, input: Input) {
 function land(f: Frame, id: TrickId) {
   const a = f.air,
     spin = Math.abs(a.spin),
-    target = id === 'spin360' ? 2 * Math.PI : id === 'spin180' ? Math.PI : 0
+    target = spinDegrees(id) * radians
   let result: Landing = 'Clean landing'
   if (isSpin(id) && spin < target - 0.46) result = 'Under-rotated'
   else if (isSpin(id) && spin > target + 0.46) result = 'Over-rotated'
+  else if (
+    requiredSpin(id, a.startSwitch) &&
+    Math.sign(a.spin) !== requiredSpin(id, a.startSwitch)
+  )
+    result = 'Opposite spin'
   else if (a.charge < 0.36) result = 'Short pop'
   else if (usesPose(id) && a.hold < 0.1) result = 'Pose missed'
   else if (usesPose(id) && a.pose > 0.28) result = 'Late release'
@@ -153,6 +206,7 @@ function land(f: Frame, id: TrickId) {
   a.alignedSpin = Math.round(a.spin / Math.PI) * Math.PI
   a.switch =
     a.startSwitch !== (Math.abs(Math.round(a.spin / Math.PI)) % 2 === 1)
+  if (a.switch !== a.startSwitch) f.lastSide = 0
   a.impact = Math.max(
     0,
     -a.vy * Math.cos(f.pitch * radians) + a.vz * Math.sin(f.pitch * radians),
@@ -252,7 +306,7 @@ export function stepAir(
     a.phase = 'ready'
     a.charge = 0
   }
-  if (a.phase === 'ready' && input.jump) {
+  if (a.phase === 'ready' && input.jump && !f.pivot) {
     a.phase = 'load'
     a.charge = 0
   }
@@ -276,9 +330,7 @@ export function trickDemoControls(f: Frame, id: TrickId, steer: number) {
       f.air.elapsed < f.air.duration * 0.67,
     steer:
       isSpin(id) && f.air.phase === 'load' && !jump
-        ? f.air.attempts % 2
-          ? -1
-          : 1
+        ? requiredSpin(id, f.air.switch) || (f.air.attempts % 2 ? -1 : 1)
         : steer,
   }
 }

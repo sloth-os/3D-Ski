@@ -26,7 +26,7 @@ export const nextCamera = (current: CameraMode) =>
   cameras[(cameras.findIndex((c) => c.id === current) + 1) % cameras.length].id
 
 import type { Point3, Lens } from './analysis.ts'
-import { bodyHeading, shoulderLook } from './air.ts'
+import { bodyHeading, shoulderLook, boardHeadYaw } from './air.ts'
 import { clamp, radians, type Frame } from './physics.ts'
 import type { Course } from './course.ts'
 export type ViewOptions = {
@@ -42,6 +42,7 @@ export type ViewOptions = {
 }
 export type ScreenPoint = { x: number; y: number; visible: boolean }
 export type Projection = {
+  leading: ScreenPoint
   upper: ScreenPoint
   lower: ScreenPoint
   gate: ScreenPoint
@@ -56,7 +57,12 @@ export const isTrailhead = (opt: ViewOptions) =>
   Math.abs(opt.zoom - 1) < 0.01
 
 // All camera offsets are in metres. A camera follows the terrain pitch when it moves around the rider.
-export function cameraShot(f: Frame, c: Course, opt: ViewOptions): CameraShot {
+export function cameraShot(
+  f: Frame,
+  c: Course,
+  opt: ViewOptions,
+  board = false,
+): CameraShot {
   const pitch = (f.pitch || c.pitch) * radians,
     heading = f.heading,
     quiet = opt.reduced ? 0 : 1
@@ -85,7 +91,8 @@ export function cameraShot(f: Frame, c: Course, opt: ViewOptions): CameraShot {
       }
       break
     case 'first': {
-      const look = heading + quiet * (bodyHeading(f) - shoulderLook(f))
+      const gaze = board ? 1.24 - boardHeadYaw(f) : -shoulderLook(f)
+      const look = heading + quiet * (bodyHeading(f) + f.boardYaw + gaze)
       const eye: Point3 = [
         Math.sin(f.lean) * 0.36,
         lift + 1.56 - f.flex * 0.24 - f.tuck * 0.17 + bob,
@@ -152,3 +159,14 @@ export function cameraShot(f: Frame, c: Course, opt: ViewOptions): CameraShot {
     fov,
   }
 }
+
+// A flat direction arrow beside the equipment is aligned to travel, even during a surface pivot.
+export const travelArrow: Point3[] = [
+  [0.41, 0.048, -0.16],
+  [0.49, 0.048, -0.16],
+  [0.49, 0.048, -1.02],
+  [0.62, 0.048, -1.0],
+  [0.45, 0.048, -1.35],
+  [0.28, 0.048, -1.0],
+  [0.41, 0.048, -1.02],
+]

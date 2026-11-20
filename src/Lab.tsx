@@ -1,4 +1,5 @@
 import { useMemo, useState } from 'react'
+import { SwitchStudy } from './SwitchStudy.tsx'
 import { TrickStudy } from './TrickStudy.tsx'
 import { isTrick } from './tricks.ts'
 import { PoseStudy } from './PoseStudy.tsx'
@@ -21,6 +22,10 @@ import {
   techniques,
   equipmentFor,
   lessonInCollection,
+  collectionNames,
+  collectionFor,
+  isSwitchDrill,
+  type Collection,
   type Setup,
   type TechniqueId,
 } from './course.ts'
@@ -41,6 +46,8 @@ export function Lab({
 }) {
   const [angle, setAngle] = useState(32),
     [speed, setSpeed] = useState(28)
+  const collection = collectionFor(id),
+    studio = collection !== 'technique-lab'
   const t = techniques[id],
     study = useMemo(() => ({ ...setup, technique: id }), [setup, id])
   const f = idealTurn(study, angle, speed),
@@ -52,7 +59,11 @@ export function Lab({
     <div className="lesson-actions">
       <button className="primary" onClick={() => practice(id)}>
         <Play size={16} fill="currentColor" />
-        {isTrick(id) ? 'Practice this trick' : 'Practice this technique'}
+        {isTrick(id)
+          ? 'Practice this trick'
+          : isSwitchDrill(id)
+            ? 'Practice switch'
+            : 'Practice this technique'}
         <ArrowRight size={16} />
       </button>
       <button className="outline-btn" onClick={() => practice(id, true)}>
@@ -61,35 +72,40 @@ export function Lab({
     </div>
   )
   return (
-    <div className={isTrick(id) ? 'lab-view freestyle-lab' : 'lab-view'}>
+    <div
+      className={studio ? 'lab-view freestyle-lab' : 'lab-view'}
+      data-collection={collection}
+    >
       <div className="lesson-toolbar">
         <div
           className="lesson-collections"
           role="group"
           aria-label="Lesson collection"
         >
-          <button
-            aria-pressed={!isTrick(id)}
-            disabled={!isTrick(id)}
-            onClick={() => select(lessonInCollection(false, setup.technique))}
-          >
-            Turn techniques
-          </button>
-          <button
-            aria-pressed={isTrick(id)}
-            disabled={isTrick(id)}
-            onClick={() => select(lessonInCollection(true, setup.technique))}
-          >
-            Ski tricks
-          </button>
+          {(Object.keys(collectionNames) as Collection[]).map((key) => (
+            <button
+              key={key}
+              aria-pressed={key === collection}
+              disabled={key === collection}
+              onClick={() => select(lessonInCollection(key, setup.technique))}
+            >
+              {collectionNames[key]}
+            </button>
+          ))}
         </div>
         <div
           className="tech-tabs"
           role="group"
-          aria-label={isTrick(id) ? 'Choose a ski trick' : 'Study a technique'}
+          aria-label={
+            collection === 'ski-tricks'
+              ? 'Choose a ski trick'
+              : collection === 'snowboard-tricks'
+                ? 'Choose a snowboard trick'
+                : collectionNames[collection]
+          }
         >
           {(Object.keys(techniques) as TechniqueId[])
-            .filter((key) => isTrick(key) === isTrick(id))
+            .filter((key) => collectionFor(key) === collection)
             .map((key) => (
               <button
                 key={key}
@@ -101,7 +117,7 @@ export function Lab({
               </button>
             ))}
         </div>
-        {isTrick(id) && actions}
+        {studio && actions}
       </div>
       <div className="lab-grid">
         <section className="panel lab-lesson">
@@ -130,10 +146,12 @@ export function Lab({
               <p>{t.watch}</p>
             </div>
           </div>
-          {!isTrick(id) && actions}
+          {!studio && actions}
         </section>
         {isTrick(id) ? (
           <TrickStudy key={id} setup={study} id={id} units={units} />
+        ) : isSwitchDrill(id) ? (
+          <SwitchStudy key={id} setup={study} id={id} />
         ) : (
           <section className="panel experiment">
             <h2>
@@ -197,7 +215,7 @@ export function Lab({
           </section>
         )}
       </div>
-      {!isTrick(id) && (
+      {!studio && (
         <div className="environment-grid">
           <TerrainProfile units={units} />
           <section className="panel surface-notes">

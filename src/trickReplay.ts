@@ -6,10 +6,10 @@ import {
   buildGates,
   type Frame,
 } from './physics.ts'
-import { isSpin, isTrick } from './tricks.ts'
+import { isSpin, isTrick, requiredSpin } from './tricks.ts'
 
 export function trickReplay(setup: Setup): Frame[] {
-  const f = emptyFrame(),
+  const f = emptyFrame(setup),
     gates = buildGates(courses[setup.course]),
     frames: Frame[] = []
   f.speed = 7.5
@@ -24,7 +24,12 @@ export function trickReplay(setup: Setup): Frame[] {
       f.air.elapsed < f.air.duration * 0.67
     step(
       f,
-      { ...neutralInput, jump, pose, steer: i === 49 && isSpin(id) ? 1 : 0 },
+      {
+        ...neutralInput,
+        jump,
+        pose,
+        steer: i === 49 && isSpin(id) ? requiredSpin(id, f.air.switch) || 1 : 0,
+      },
       setup,
       gates,
       1 / 60,

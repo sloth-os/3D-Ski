@@ -44,6 +44,11 @@ export function initialLog(): Run[] {
         (r): r is Run =>
           !!r &&
           isSetup(r.setup) &&
+          (r.switchRide === undefined ||
+            (r.switchRide !== null &&
+              ['distance', 'turns', 'gates'].every(
+                (k) => Number.isFinite(r.switchRide[k]) && r.switchRide[k] >= 0,
+              ))) &&
           (r.freestyle === undefined ||
             (r.freestyle !== null &&
               ['landed', 'attempts', 'bestTime', 'points'].every(

@@ -196,19 +196,27 @@ export function Viewport({
             p.grab?.engaged
               ? [
                   'Grab contact',
-                  p.grab.hand === 1
-                    ? 'Right hand · right ski'
-                    : 'Left hand · right ski',
+                  (p.grab.hand === 1 ? 'Right hand' : 'Left hand') +
+                    ' · ' +
+                    p.grab.target,
                 ]
               : ['Knee flexion', Math.round(p.legs[p.outside].angle) + '°'],
           ]
         : [
             [
-              board ? 'Front binding' : 'Left ski',
+              board
+                ? f.air.switch
+                  ? 'Trailing · nose'
+                  : 'Front binding'
+                : 'Left ski',
               Math.round(a.contacts[0]) + ' N',
             ],
             [
-              board ? 'Rear binding' : 'Right ski',
+              board
+                ? f.air.switch
+                  ? 'Leading · tail'
+                  : 'Rear binding'
+                : 'Right ski',
               Math.round(a.contacts[1]) + ' N',
             ],
           ]

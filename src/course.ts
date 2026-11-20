@@ -1,4 +1,4 @@
-import { freestyleGuide, isTrick, tricks } from './tricks.ts'
+import { freestyleGuide, isBoardTrick, isTrick, tricks } from './tricks.ts'
 
 export const courses = {
   ridge: {
@@ -247,19 +247,113 @@ export const techniques = {
     watch:
       'Observe the angle between board heading and travel, the change in speed, and the front-to-rear load distribution.',
   },
+  skiSwitch: {
+    name: 'Skiing backwards',
+    category: 'Switch · Alpine skis',
+    edge: [14, 34],
+    sidecut: 19,
+    response: 0.96,
+    objective:
+      'Link parallel turns with the ski tails leading and keep the downhill line in view.',
+    cue: 'Stagger the feet, look over the outside shoulder and guide both tails through the turn.',
+    phases: [
+      [
+        'Set the stance',
+        'Start tails first on a gentle piste. Keep the knees soft and stagger the feet to make room to look downhill.',
+      ],
+      [
+        'Guide the tails',
+        'Look over the outside shoulder and steer the tails through a rounded arc.',
+      ],
+      [
+        'Change shoulders',
+        'As you release the edges, change the stagger and turn your gaze through the new outside shoulder.',
+      ],
+    ],
+    drill:
+      'Start switch on Pine Meadow. Link two opposite turns and clear a gate tails first. Use V or Pivot to return to forward.',
+    watch:
+      'The travel arrow stays downhill as the ski tips face uphill. Compare the outside ski and shoulder on each arc.',
+    source:
+      'https://skiaddiction.com/blogs/training-education/how-to-ski-switch',
+  },
+  boardSwitch: {
+    name: 'Switch snowboarding',
+    category: 'Switch · Snowboard',
+    edge: [16, 38],
+    sidecut: 8.8,
+    response: 0.91,
+    objective:
+      'Ride with the opposite foot leading and link controlled toe-side and heel-side turns.',
+    cue: 'Look past the new leading foot, center the hips and roll progressively onto the new edge.',
+    phases: [
+      [
+        'Change the lead',
+        'With the regular setup, switch puts the right foot downhill. Look along the board past that binding.',
+      ],
+      [
+        'Find both edges',
+        'Steer right to engage the heel edge in switch. Flatten the board before guiding it left onto the toe edge.',
+      ],
+      [
+        'Link the turns',
+        'Keep the hips between the bindings and release the old edge smoothly before changing direction.',
+      ],
+    ],
+    drill:
+      'Start switch and link a heel-side turn to a toe-side turn. Use V or Pivot to compare the same inputs riding regular.',
+    watch:
+      'The nose and tail binding positions stay fixed on the deck. The rider changes the leading foot and shifts support toward it.',
+    source:
+      'https://snowboardaddiction.com/blogs/training-education/how-to-ride-switch',
+  },
   ...tricks,
 } as const
 export type TechniqueId = keyof typeof techniques
-export function lessonInCollection(
-  freestyle: boolean,
-  preferred: TechniqueId,
-): TechniqueId {
-  if (isTrick(preferred) === freestyle) return preferred
-  return freestyle ? 'straightAir' : 'parallel'
-}
 export type Equipment = 'skis' | 'snowboard'
 export function equipmentFor(id: TechniqueId): Equipment {
-  return id === 'boardCarve' || id === 'boardSkid' ? 'snowboard' : 'skis'
+  return id === 'boardCarve' ||
+    id === 'boardSkid' ||
+    id === 'boardSwitch' ||
+    isBoardTrick(id)
+    ? 'snowboard'
+    : 'skis'
+}
+export const collectionNames = {
+  'technique-lab': 'Turn techniques',
+  'ski-tricks': 'Ski tricks',
+  'snowboard-tricks': 'Snowboard tricks',
+  'switch-riding': 'Switch riding',
+} as const
+export type Collection = keyof typeof collectionNames
+export function isCollection(id: string | null): id is Collection {
+  return !!id && Object.hasOwn(collectionNames, id)
+}
+export const isSwitchDrill = (
+  id: TechniqueId,
+): id is 'skiSwitch' | 'boardSwitch' =>
+  id === 'skiSwitch' || id === 'boardSwitch'
+export function collectionFor(id: TechniqueId): Collection {
+  if (isSwitchDrill(id)) return 'switch-riding'
+  if (isBoardTrick(id)) return 'snowboard-tricks'
+  return isTrick(id) ? 'ski-tricks' : 'technique-lab'
+}
+export function lessonInCollection(
+  collection: Collection,
+  preferred: TechniqueId,
+): TechniqueId {
+  if (collectionFor(preferred) === collection) return preferred
+  const board = equipmentFor(preferred) === 'snowboard'
+  switch (collection) {
+    case 'ski-tricks':
+      return 'straightAir'
+    case 'snowboard-tricks':
+      return 'boardOllie'
+    case 'switch-riding':
+      return board ? 'boardSwitch' : 'skiSwitch'
+    case 'technique-lab':
+      return board ? 'boardCarve' : 'parallel'
+  }
 }
 export const equipmentName = {
   skis: 'Alpine skis',
@@ -269,6 +363,14 @@ export type Setup = {
   course: CourseId
   technique: TechniqueId
   surface: SurfaceId
+  stance?: 'forward' | 'switch'
+}
+export const startsSwitch = (setup: Setup) =>
+  isSwitchDrill(setup.technique) || setup.stance === 'switch'
+export function stanceLabel(board: boolean, switched: boolean) {
+  if (board)
+    return switched ? 'Switch · right foot leads' : 'Regular · left foot leads'
+  return switched ? 'Backwards · tails lead' : 'Forward · tips lead'
 }
 export const defaultSetup: Setup = {
   course: 'ridge',
@@ -281,7 +383,7 @@ export const references = [
     title: 'Freestyle Specialist Performance Guide',
     publisher: 'PSIA-AASI · Freestyle',
     url: freestyleGuide,
-    note: 'Approach, takeoff, maneuver, and landing organize the ski trick lessons. The flatland and small-jump assessments describe fore–aft pressure, pop, rotation, and landing control.',
+    note: 'The guide describes switch parallel skiing, switch snowboarding and the approach, takeoff, maneuver and landing phases of freestyle tricks.',
   },
   {
     title: 'Snowboarding Fundamentals',
@@ -315,6 +417,7 @@ export function isSetup(value: unknown): value is Setup {
   return (
     Object.hasOwn(courses, s.course) &&
     Object.hasOwn(techniques, s.technique) &&
-    Object.hasOwn(surfaces, s.surface)
+    Object.hasOwn(surfaces, s.surface) &&
+    (s.stance === undefined || s.stance === 'forward' || s.stance === 'switch')
   )
 }

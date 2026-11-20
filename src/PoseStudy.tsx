@@ -1,7 +1,8 @@
 import { useEffect, useRef, useState } from 'react'
 import { Camera, Pause, Play, RotateCcw } from 'lucide-react'
-import { idealTurn, type Lens } from './analysis.ts'
-import type { Setup } from './course.ts'
+import { analyse, idealTurn, type Lens } from './analysis.ts'
+import { equipmentFor, type Setup } from './course.ts'
+import { gripFor } from './tricks.ts'
 import type { MountainView } from './mountain.ts'
 import { canvasMountain } from './scene/canvas.ts'
 import { clamp, type Frame } from './physics.ts'
@@ -12,15 +13,18 @@ export function PoseStudy({
   speed,
   frame,
   trail,
+  switched,
 }: {
   setup: Setup
   angle: number
   speed: number
   frame?: Frame
+  switched?: boolean
   trail?: readonly Frame[]
 }) {
   const mount = useRef<HTMLDivElement>(null),
     gripLabel = useRef<HTMLSpanElement>(null),
+    readout = useRef<HTMLOutputElement>(null),
     orbit = useRef(-0.25),
     pointer = useRef<{ id: number; x: number } | null>(null)
   const [playing, setPlaying] = useState(false),
@@ -28,11 +32,11 @@ export function PoseStudy({
     [closeUp, setCloseUp] = useState(false)
   const phase = useRef(0),
     refresh = useRef(true),
-    config = useRef({ angle, speed, playing, lens, closeUp, frame })
-  config.current = { angle, speed, playing, lens, closeUp, frame }
+    config = useRef({ angle, speed, playing, lens, closeUp, frame, switched })
+  config.current = { angle, speed, playing, lens, closeUp, frame, switched }
   useEffect(() => {
     refresh.current = true
-  }, [angle, speed, lens, playing, closeUp, frame])
+  }, [angle, speed, lens, playing, closeUp, frame, switched])
   useEffect(() => {
     const host = mount.current!
     let dead = false,
@@ -62,7 +66,8 @@ export function PoseStudy({
           if (opt.playing && last)
             phase.current += 1.2 * clamp((now - last) / 1000, 0, 0.08)
           const f =
-            opt.frame ?? idealTurn(setup, opt.angle, opt.speed, phase.current)
+            opt.frame ??
+            idealTurn(setup, opt.angle, opt.speed, phase.current, opt.switched)
           const projection = view!.draw(f, {
             camera: opt.closeUp ? 'edge' : 'side',
             lens: opt.lens,
@@ -75,10 +80,24 @@ export function PoseStudy({
             reduced: true,
           })
           const label = gripLabel.current
+          if (readout.current) {
+            const a = analyse(f, setup)
+            readout.current.textContent =
+              equipmentFor(setup.technique) === 'snowboard'
+                ? a.edgeName +
+                  ' · ' +
+                  Math.round(
+                    (f.air.switch ? 1 - a.firstShare : a.firstShare) * 100,
+                  ) +
+                  '% on lead foot'
+                : a.edgeName + ' · ' + Math.round(f.load) + '% outside'
+          }
           if (label) {
-            const at = projection.lower
+            const aimAtEnd = opt.switched !== undefined
+            const at = aimAtEnd ? projection.leading : projection.lower
             label.hidden =
-              opt.lens !== 'body' || f.air.pose < 0.99 || !at.visible
+              !at.visible ||
+              (!aimAtEnd && (opt.lens !== 'body' || f.air.pose < 0.99))
             label.style.left = at.x * 100 + '%'
             label.style.top = at.y * 100 + '%'
             label.dataset.flip = String(
@@ -100,6 +119,8 @@ export function PoseStudy({
       view?.dispose()
     }
   }, [setup, trail])
+  const grip = gripFor(setup.technique, frame?.air.switch ?? false)
+  const board = equipmentFor(setup.technique) === 'snowboard'
   return (
     <div className="pose-study">
       <div
@@ -108,7 +129,8 @@ export function PoseStudy({
         role="img"
         aria-label={
           frame
-            ? '3D ski trick replay. Drag to orbit the rider.'
+            ? (board ? '3D snowboard trick replay.' : '3D ski trick replay.') +
+              ' Drag to orbit the rider.'
             : 'Interactive 3D rider showing the selected edge angle and body position. Drag to orbit.'
         }
         onPointerDown={(e) => {
@@ -125,10 +147,19 @@ export function PoseStudy({
         }}
         onLostPointerCapture={() => (pointer.current = null)}
       />
-      {(setup.technique === 'muteGrab' || setup.technique === 'safetyGrab') && (
+      {(grip || switched !== undefined) && (
         <span className="study-grip" ref={gripLabel} hidden>
-          {setup.technique === 'muteGrab' ? 'Left glove' : 'Right glove'} ·
-          right ski
+          {grip
+            ? (grip.hand === 1 ? 'Right glove' : 'Left glove') +
+              ' · ' +
+              grip.target
+            : board
+              ? switched
+                ? 'Tail · right foot leads'
+                : 'Nose · left foot leads'
+              : switched
+                ? 'Ski tails lead'
+                : 'Ski tips lead'}
         </span>
       )}
       <div className="study-tools">
@@ -149,6 +180,14 @@ export function PoseStudy({
           <Camera size={14} />
         </button>
       </div>
+      {switched !== undefined && (
+        <output
+          ref={readout}
+          className="switch-readout"
+          aria-label="Switch turn analysis"
+          aria-live="off"
+        />
+      )}
       <div className="study-foot">
         {!frame && (
           <button

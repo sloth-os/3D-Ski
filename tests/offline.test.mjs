@@ -5,7 +5,7 @@ import { preview } from 'vite'
 
 test(
   'a project-site install loads the courses and freestyle replays and saves touch-controlled runs with its host offline',
-  { timeout: 100000 },
+  { timeout: 140000 },
   async (t) => {
     const base = '/pages-check/'
     const host = await preview({
@@ -182,6 +182,87 @@ test(
       () => JSON.parse(localStorage.getItem('fallline.runs'))[0],
     )
     assert.equal(mostRecent.freestyle.points, 180)
+    await page.getByRole('button', { name: 'Close dialog' }).tap()
+    await page.getByRole('button', { name: 'Run setup', exact: true }).tap()
+    await page.getByRole('button', { name: 'Snowboard', exact: true }).tap()
+    await page.locator('#technique').selectOption('boardIndy')
+    await page
+      .getByRole('group', { name: 'Starting stance' })
+      .getByRole('button', { name: 'Switch · right foot leads' })
+      .tap()
+    await page.getByRole('button', { name: 'Apply setup' }).tap()
+    await page.goto(url + '#snowboard-tricks/boardIndy')
+    assert.ok((await page.reload()).fromServiceWorker())
+    await page
+      .locator('.study-surface canvas[data-renderer="canvas"]')
+      .waitFor()
+    await page
+      .locator('.study-grip')
+      .filter({ hasText: 'Left glove · toe edge' })
+      .waitFor()
+    await practice.tap()
+    await page.locator('.trick-hud[data-stance="switch"]').waitFor()
+    await page
+      .getByRole('combobox', { name: 'Playback speed' })
+      .selectOption('0.5')
+    await pressControl('Hold to load, release to jump')
+    await meter(100)
+    await release()
+    await page.locator('.trick-hud[data-phase="flight"]').waitFor()
+    await pressControl('Hold the trick pose')
+    await meter(55)
+    await release()
+    await page
+      .locator('.trick-hud .hud-kicker')
+      .filter({ hasText: 'Clean landing +180' })
+      .waitFor()
+    await page.getByRole('button', { name: 'End run', exact: true }).tap()
+    await page.waitForFunction(
+      () =>
+        JSON.parse(localStorage.getItem('fallline.runs') || '[]').length === 3,
+    )
+    await page.goto(url + '#switch-riding/boardSwitch')
+    assert.ok((await page.reload()).fromServiceWorker())
+    await page
+      .locator('.switch-study .study-grip')
+      .filter({ hasText: 'Tail · right foot leads' })
+      .waitFor()
+    await page
+      .locator('.switch-readout')
+      .filter({ hasText: 'Heel edge' })
+      .waitFor()
+    await page
+      .getByRole('group', { name: 'Compare riding stance' })
+      .getByRole('button', { name: 'Regular' })
+      .tap()
+    await page
+      .locator('.switch-readout')
+      .filter({ hasText: 'Toe edge' })
+      .waitFor()
+    await page.getByRole('button', { name: 'Practice switch' }).tap()
+    await page.locator('.switch-hud[data-stance="switch"]').waitFor()
+    await page.waitForFunction(
+      () =>
+        parseInt(document.querySelector('.switch-hud footer')?.textContent) > 1,
+    )
+    await page.getByRole('button', { name: 'Pivot to forward' }).tap()
+    await page.locator('.switch-hud[data-stance="forward"]').waitFor()
+    await page.getByRole('button', { name: 'End run', exact: true }).tap()
+    await page.waitForFunction(
+      () =>
+        JSON.parse(localStorage.getItem('fallline.runs') || '[]').length === 4,
+    )
+    await page.reload()
+    await page.getByRole('link', { name: 'Run log', exact: true }).tap()
+    const history = await page.locator('.log-table').innerText()
+    assert.match(history, /Switch snowboarding/)
+    assert.match(history, /Indy grab/)
+    const [switchRun, indy] = await page.evaluate(() =>
+      JSON.parse(localStorage.getItem('fallline.runs')),
+    )
+    assert.ok(switchRun.switchRide.distance > 0)
+    assert.equal(indy.setup.stance, 'switch')
+    assert.equal(indy.freestyle.points, 180)
     assert.deepEqual(errors, [])
   },
 )

@@ -1,6 +1,6 @@
 # Fallline Alpine Simulator
 
-Fallline is a full-screen ski and snowboard game for the browser. Ride through alpine gates, practice freestyle ski tricks, or freeze a reference rider in midair and inspect the forces and joint positions in 3D. The production app runs offline after its first successful visit. [Play Fallline](https://sloth-os.github.io/3D-Ski/) · [Open the ski tricks](https://sloth-os.github.io/3D-Ski/#ski-tricks)
+Fallline is a full-screen ski and snowboard game for the browser. Ride gates in either stance, practice 17 freestyle tricks, or freeze the rider in midair to inspect a grab, a joint angle, or a force. The game runs offline after its first successful visit. [Play Fallline](https://sloth-os.github.io/3D-Ski/) · [Ski tricks](https://sloth-os.github.io/3D-Ski/#ski-tricks) · [Snowboard tricks](https://sloth-os.github.io/3D-Ski/#snowboard-tricks) · [Switch riding](https://sloth-os.github.io/3D-Ski/#switch-riding)
 
 ## Playing
 
@@ -12,9 +12,10 @@ Open **Run setup** to choose terrain, equipment, technique, and snow. **Start ru
 | ↑ or W          | Tuck to reduce air drag                                                |
 | ↓ or S          | Flex the legs over terrain changes                                     |
 | Space           | Brake by skidding                                                      |
-| Hold J, release | Charge a pop and jump in a ski trick drill                             |
+| Hold J, release | Charge a pop and jump in a freestyle drill                             |
 | ← or → at pop   | Set the direction of a 180 or 360                                      |
 | Hold K, release | Show a shifty or grab in flight, then open for touchdown               |
+| V               | Make a surface 180 to change between forward and switch                |
 | Enter           | Start or resume                                                        |
 | P or Esc        | Pause or resume                                                        |
 | C or 1–5        | Cycle cameras or select chase, helmet, trackside, edge, or aerial      |
@@ -23,7 +24,7 @@ Open **Run setup** to choose terrain, equipment, technique, and snow. **Start ru
 | .               | Advance a paused run or demonstration by one physics frame             |
 | M or ?          | Toggle slope audio or open controls                                    |
 
-On a touchscreen, hold **Pop** and lift your finger to jump. Keep a second finger on a steering arrow as you release Pop to spin. **Pose** controls shifties and grabs. Playback offers full, half, and quarter speed. Opening a tool or leaving the tab pauses an active descent.
+On a touchscreen, hold **Pop** and lift your finger to jump. Keep a second finger on a steering arrow as you release Pop to spin. **Pose** controls shifties and grabs. Tap the stance beside the course name to pivot on the snow. Playback offers full, half, and quarter speed. Opening a tool or leaving the tab pauses an active descent.
 
 ### Mountain and equipment
 
@@ -33,7 +34,7 @@ On a touchscreen, hold **Pop** and lift your finger to jump. Keep a second finge
 | Alpine Ridge | 18°        | 640 m  | 12    |
 | Glacier Bowl | 24°        | 780 m  | 16    |
 
-The three fictional Swiss courses have distinct gate spacing, elevation, forest density, and undulations. Groomed, powder, and icy snow change friction, effective grip, contact area, and spray. Choose parallel, carved, wedge, or short turns on skis. On a snowboard, choose edge-to-edge carves or skidded turns with a regular stance, fixed bindings, toe and heel edges, and sideslip.
+The three fictional Swiss courses have distinct gate spacing, elevation, forest density, and undulations. Groomed, powder, and icy snow change friction, effective grip, contact area, and spray. Choose parallel, carved, wedge, or short turns on skis. On a snowboard, choose edge-to-edge carves or skidded turns with fixed bindings, toe and heel edges, and sideslip. Use **Run setup → Starting stance** to begin an open practice forward or switch.
 
 ### Practicing ski tricks
 
@@ -52,6 +53,30 @@ Open **Ski tricks**, pick a move, and use the replay to study approach, takeoff,
 
 A full pop takes about half a second to charge. Grabs and shifties score when the pose is held visibly and released before landing. Spins use the rotation set at takeoff and can finish under- or over-rotated. The run log stores attempts, clean landings, longest completed airtime, and trick points alongside the gate score. These are simulator scoring rules.
 
+### Practicing snowboard tricks
+
+Select a trick and scrub between takeoff, the apex, and landing. In **Body**, follow the highlighted arm from shoulder to elbow to the glove’s contact point on the deck. In **Contact**, watch pressure move between the bindings during preload, drop to zero in flight, and rise on touchdown. Both feet stay attached to the same deck as it pitches and turns. [Snowboard trick studio](https://sloth-os.github.io/3D-Ski/#snowboard-tricks)
+
+| Trick            | Movement to study                                                        | Clean landing |
+| ---------------- | ------------------------------------------------------------------------ | ------------: |
+| Board ollie      | Load the trailing end and lift the leading end first                     |    110 points |
+| Board nollie     | Reverse the preload and lift the trailing end first                      |    130 points |
+| Frontside shifty | Turn the board across the flight path while the shoulders counter-rotate |    155 points |
+| Indy grab        | Trailing hand on the toe edge, just inside the trailing binding          |    180 points |
+| Melon grab       | Leading hand on the heel edge between the feet                           |    200 points |
+| Nose grab        | Draw up the leading knee to bring the tip to the leading hand            |    220 points |
+| Frontside 180    | Turn chest-first through downhill and land on the other lead foot        |    190 points |
+| Backside 180     | Turn back-first through downhill and land on the other lead foot         |    210 points |
+| Frontside 360    | Complete a frontside rotation and ride out in the starting stance        |    290 points |
+
+With the simulator’s regular setup, left foot leads and a frontside spin starts left. Riding switch puts the right foot first and reverses the spin cue. A half-turn in the opposite direction still changes the lead foot, and the game identifies the missed trick. Switch grab variations use the advancing end as the reference, so a switch nose grab reaches the physical tail. [Snowboard grab reference](https://snowboardaddiction.com/blogs/training-education/112716804-the-complicated-world-of-snowboard-grabs) · [Frontside 180](https://snowboardaddiction.com/blogs/training-education/how-to-frontside-180-on-snow) · [Backside 180](https://snowboardaddiction.com/blogs/training-education/how-to-backside-180-on-snow)
+
+### Skiing backwards and riding switch
+
+**Skiing backwards** starts with the tails leading. The skier changes the foot stagger and looks over the outside shoulder as the turn changes direction. **Switch snowboarding** starts with the right foot leading. A right turn engages the heel edge in switch and the toe edge in regular. In the turn study, hold the same steering angle and change stance to compare the loaded ski or edge. The turquoise arrow tracks travel as the equipment turns. [Skiing backwards](https://sloth-os.github.io/3D-Ski/#switch-riding/skiSwitch) · [Switch snowboarding](https://sloth-os.github.io/3D-Ski/#switch-riding/boardSwitch)
+
+Press **V** or tap the stance to pivot once on the snow. The base flattens as the equipment turns through 180° and the rider continues downhill. The switch practice display tracks downhill distance and linked turns. The run log also records gates cleared while riding switch. Airborne tricks have their own score. [Ski Addiction on switch skiing](https://skiaddiction.com/blogs/training-education/how-to-ski-switch) · [Snowboard Addiction on riding switch](https://snowboardaddiction.com/blogs/training-education/how-to-ride-switch)
+
 ### Studying a turn
 
 - **Forces** draws gravity and air drag at the center of mass and snow reaction at the weighted contact point. The arrows share a force scale. Select an annotation or an instrument to capture that frame. The inspector resolves the vectors in newtons and shows the net force.
@@ -65,7 +90,7 @@ The fixed 60 Hz model follows the terrain height field. It resolves gravity alon
 
 The analysis assumes a 75 kg rider. Body pose, binding loads, and snow contact area are estimates from the model. Pressure, edging, rotation, and flexion cues draw on the alpine and snowboard fundamentals. [PSIA Alpine Certification Standards](https://thesnowpros.org/wp-content/uploads/2025/11/PSIA_Alpine_Standards100225v5.pdf) · [AASI Snowboard Certification Standards](https://thesnowpros.org/wp-content/uploads/2025/10/AASI_Snowboard_Standards0224_updated_100325_v3.pdf)
 
-The freestyle model gives the rider an upward impulse from the rolling course surface. Gravity and quadratic air drag act through flight. The reaction force and contact pressure drop to zero until the ballistic path intersects the terrain. A short modeled compression absorbs the normal impact speed. Ski orientation can change independently of the flight path. The studio replays use the same fixed-step simulation and inputs as the playable drills.
+The freestyle model gives the rider an upward impulse from the rolling course surface. Gravity and quadratic air drag act through flight. The reaction force and contact pressure drop to zero until the ballistic path intersects the terrain. A short modeled compression absorbs the normal impact speed. Equipment orientation can change independently of the flight path. The studio replays use the same fixed-step simulation and inputs as the playable drills.
 
 The four lesson phases follow the PSIA-AASI freestyle performance guide. The guide describes fore–aft loading, maintaining a grab in the air, and aligning the equipment for landing. Each trick also links to its movement tutorial in the game. [PSIA-AASI Freestyle Specialist Performance Guide](https://thesnowpros.org/wp-content/uploads/2025/01/Frestyle-Specialist-Performance-Guide-Nov2022_2-2.pdf) · [Ski Addiction on the shifty](https://skiaddiction.com/blogs/training-education/how-to-shifty-zero-spin) · [Safety and mute grabs](https://skiaddiction.com/blogs/training-education/how-to-safety-mute-grab) · [The 360](https://skiaddiction.com/blogs/training-education/how-to-360)
 
@@ -96,7 +121,7 @@ After the production app shows **Offline ready**, its service worker has cached 
 
 The GitHub Actions workflow runs on pushes to the default branch and manual dispatch. It runs the physics regressions, builds the production app, exercises the WebGL cockpit and disconnected PWA with Chromium, and deploys the resulting artifact. Repository Pages settings use **GitHub Actions** as the deployment source. Relative asset URLs and the scoped manifest and service worker support repository subpaths. [Publishing workflow](.github/workflows/pages.yml)
 
-The regression suite covers all 126 course, surface, and technique combinations, including all 72 freestyle replays. It checks force balance, ski and hand positions, snowboard stance, takeoff, switch landings, and scoring. To repeat the browser checks locally, first build the site and then run the following. An existing Chromium executable can be selected with `FALLLINE_CHROMIUM`.
+The regression suite covers all 225 course, surface, and technique combinations and 306 freestyle replays across both starting stances. It checks force balance, grabs, binding attachment, toe and heel edges, surface pivots, switch landings, and scoring. To repeat the browser checks locally, first build the site and then run the following. An existing Chromium executable can be selected with `FALLLINE_CHROMIUM`.
 
 ```sh
 npx playwright-core install --only-shell chromium

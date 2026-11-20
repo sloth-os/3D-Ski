@@ -2,6 +2,8 @@ import {
   courses,
   equipmentFor,
   defaultSetup,
+  startsSwitch,
+  isSwitchDrill,
   surfaces,
   techniques,
   type Course,
@@ -12,6 +14,8 @@ import { clamp, radians, pitchAt, worldHeight } from './slope.ts'
 export { clamp, radians, pitchAt, worldHeight, undulation } from './slope.ts'
 import {
   initialAir,
+  foreAftPress,
+  stepPivot,
   stepAir,
   landingSupport,
   trickDemoControls,
@@ -24,6 +28,7 @@ const approach = (current: number, target: number, rate: number, dt: number) =>
 export type Input = {
   jump?: boolean
   pose?: boolean
+  pivot?: boolean
   steer: number
   tuck: boolean
   flex: boolean
@@ -44,6 +49,12 @@ export type Frame = {
   heading: number
   forceHeading: number
   air: AirState
+  pivot: { progress: number; direction: number } | null
+  pivotHeld: boolean
+  lookSide: number
+  switchDistance: number
+  switchTurns: number
+  switchGates: number
   edge: number
   radius: number
   load: number
@@ -73,14 +84,20 @@ export type Frame = {
   focusTime: number
   done: boolean
 }
-export const emptyFrame = (): Frame => ({
+export const emptyFrame = (setup: Setup = defaultSetup): Frame => ({
   x: 0,
   d: 0,
   t: 0,
   speed: 0,
   heading: 0,
   forceHeading: 0,
-  air: initialAir(),
+  air: initialAir(startsSwitch(setup)),
+  pivot: null,
+  pivotHeld: false,
+  lookSide: 1,
+  switchDistance: 0,
+  switchTurns: 0,
+  switchGates: 0,
   edge: 0,
   radius: Infinity,
   load: 50,
@@ -155,12 +172,15 @@ export function step(
     surface = surfaces[setup.surface],
     tech = techniques[setup.technique]
   const pitch = pitchAt(course, f.d, f.x)
+  if (f.t === 0 && startsSwitch(setup) && !f.air.switch)
+    f.air = initialAir(true)
   f.t += dt
   f.pitch = pitch / radians
   f.forceHeading = f.heading
   const trick = isTrick(setup.technique),
     beforeX = f.x,
     beforeD = f.d
+  stepPivot(f, input, dt)
   if (
     isTrick(setup.technique) &&
     stepAir(f, setup.technique, course, input, dt)
@@ -169,7 +189,7 @@ export function step(
     return
   }
   f.tuck = approach(f.tuck, input.tuck && !input.brake ? 1 : 0, 4, dt)
-  f.brake = approach(f.brake, input.brake ? 1 : 0, 5, dt)
+  f.brake = approach(f.brake, input.brake ? 1 : f.pivot ? 0.32 : 0, 5, dt)
   f.flex = approach(
     f.flex,
     f.air.phase === 'load'
@@ -188,11 +208,13 @@ export function step(
   const previousEdge = f.edge
   f.edge = approach(
     f.edge,
-    clamp(input.steer, -1, 1) * maxEdge * (1 - 0.32 * f.brake),
+    (f.pivot ? 0 : clamp(input.steer, -1, 1)) * maxEdge * (1 - 0.32 * f.brake),
     2.3 * tech.response,
     dt,
   )
   f.edgeRate = (f.edge - previousEdge) / dt
+  if (Math.abs(f.edge) > 4)
+    f.lookSide = approach(f.lookSide, -Math.sign(f.edge), 4.4, dt)
   const edge = Math.abs(f.edge) * radians
   const rough =
     surface.roughness * Math.abs(Math.sin(f.d * 0.21)) * (1 - 0.62 * f.flex)
@@ -200,7 +222,8 @@ export function step(
   f.grip = effectiveGrip
   const offPiste = clamp((Math.abs(f.x) - 21) / 5, 0, 1)
   f.slip = clamp(
-    (1 - effectiveGrip) * Math.sin(edge) +
+    (f.pivot ? 0.46 * Math.sin(Math.PI * f.pivot.progress) : 0) +
+      (1 - effectiveGrip) * Math.sin(edge) +
       f.brake * 0.7 +
       (wedge
         ? 0.18
@@ -281,9 +304,10 @@ export function step(
   f.d = Math.min(course.length, f.d + Math.cos(f.heading) * f.speed * dt)
   f.maxSpeed = Math.max(f.maxSpeed, f.speed)
   const side = Math.abs(f.edge) >= 9 ? Math.sign(f.edge) : 0
-  if (side && side !== f.lastSide && f.speed > 1) {
+  if (side && side !== f.lastSide && f.speed > 1 && !f.pivot) {
     if (f.lastSide && f.t - f.lastTurnTime > 0.65) {
       f.turns++
+      if (f.air.switch) f.switchTurns++
       f.points += 25
     }
     f.lastSide = side
@@ -293,7 +317,8 @@ export function step(
     Math.abs(f.edge) >= tech.edge[0] &&
     Math.abs(f.edge) <= tech.edge[1] &&
     f.speed > 1 &&
-    offPiste < 0.1
+    offPiste < 0.1 &&
+    (!isSwitchDrill(setup.technique) || (f.air.switch && !f.pivot))
   )
     f.focusTime += dt
   if (!trick) f.quality = Math.round((100 * f.focusTime) / f.t)
@@ -306,6 +331,12 @@ function finishStep(
   beforeX: number,
   beforeD: number,
 ) {
+  const ridingSwitch =
+    f.air.switch &&
+    !f.pivot &&
+    f.air.phase !== 'flight' &&
+    f.air.landedAt !== f.t
+  if (ridingSwitch) f.switchDistance += f.d - beforeD
   const gate = gates[f.gatesSeen]
   if (gate && f.d >= gate.d) {
     const crossingX =
@@ -316,6 +347,7 @@ function finishStep(
     f.lastGateTime = f.t
     if (f.lastGateHit) {
       f.gatesHit++
+      if (ridingSwitch) f.switchGates++
       f.points += 100
     }
   }
@@ -328,28 +360,34 @@ export type Sample = {
   load: number
   radius: number
 }
-export function frontBindingShare(f: Frame) {
-  return clamp(
+export function frontBindingShare(f: Frame, setup?: Setup) {
+  const lead = clamp(
     0.53 + 0.065 * f.tuck - 0.13 * f.brake + 0.038 * Math.tanh(f.edgeRate / 38),
     0.32,
     0.68,
   )
+  const nose = f.air.switch ? 1 - lead : lead
+  const press =
+    setup && f.air.phase === 'load' ? foreAftPress(f, setup.technique) : 0
+  return clamp(nose - 0.34 * press, 0.12, 0.88)
 }
 export function sample(f: Frame, setup: Setup = defaultSetup): Sample {
   return {
     speed: f.speed * 3.6,
     edge: Math.abs(f.edge),
     load:
-      equipmentFor(setup.technique) === 'snowboard'
-        ? 100 * frontBindingShare(f)
-        : f.load,
+      f.air.phase === 'flight'
+        ? 0
+        : equipmentFor(setup.technique) === 'snowboard'
+          ? 100 * frontBindingShare(f, setup)
+          : f.load,
     radius: f.radius,
   }
 }
 
 // The standby charts show a reproducible sample from the same dynamics used during play.
 export function referenceRun(setup: Setup): Sample[] {
-  const frame = emptyFrame(),
+  const frame = emptyFrame(setup),
     gates = buildGates(courses[setup.course]),
     samples: Sample[] = []
   for (let i = 0; i < 646; i++) {
@@ -374,6 +412,15 @@ export function summarize(frame: Frame, setup: Setup) {
       ? Math.round((100 * frame.air.landed) / Math.max(1, frame.air.attempts))
       : frame.quality,
     finished: frame.done,
+    ...(frame.switchDistance > 0 || startsSwitch(setup)
+      ? {
+          switchRide: {
+            distance: Math.round(frame.switchDistance),
+            turns: frame.switchTurns,
+            gates: frame.switchGates,
+          },
+        }
+      : {}),
     ...(isTrick(setup.technique)
       ? {
           freestyle: {
@@ -435,7 +482,7 @@ export function demonstrationInput(
 }
 
 export function referenceFrame(setup: Setup): Frame {
-  const frame = emptyFrame(),
+  const frame = emptyFrame(setup),
     gates = buildGates(courses[setup.course])
   for (let i = 0; i < 646; i++) {
     step(frame, demonstrationInput(frame, setup, gates), setup, gates, 1 / 60)

@@ -1,9 +1,15 @@
-import { bodyHeading } from '../air.ts'
-import { courses, equipmentFor, type Setup } from '../course.ts'
-import { cameraShot, isTrailhead, type ScreenPoint } from '../cameras.ts'
+import { bodyHeading, boardHeadYaw, shoulderLook } from '../air.ts'
+import { courses, equipmentFor, isSwitchDrill, type Setup } from '../course.ts'
+import {
+  cameraShot,
+  travelArrow,
+  isTrailhead,
+  type ScreenPoint,
+} from '../cameras.ts'
 import {
   analyse,
   deckPoint,
+  transformPoint,
   riderPose,
   add3,
   scale3,
@@ -66,7 +72,7 @@ export function canvasMountain(
       ctx.clearRect(0, 0, w, h)
       const plate = isTrailhead(opt) && setup.course === 'ridge'
       container.dataset.plate = plate ? 'on' : 'off'
-      const shot = cameraShot(f, course, opt),
+      const shot = cameraShot(f, course, opt, board),
         pos = at(f.x, f.d),
         eye = add3(shot.eye, pos)
       const fw = unit(sub(shot.target, shot.eye)),
@@ -273,6 +279,29 @@ export function canvasMountain(
       const p = riderPose(f, setup),
         a = analyse(f, setup),
         com = local(p.com)
+      if (
+        (isSwitchDrill(setup.technique) || f.air.switch || f.pivot) &&
+        f.air.phase !== 'flight'
+      ) {
+        const mark = travelArrow.map(([x, y, z]) =>
+          project(
+            at(
+              f.x + x * Math.cos(f.heading) - z * Math.sin(f.heading),
+              f.d - x * Math.sin(f.heading) - z * Math.cos(f.heading),
+              y,
+            ),
+          ),
+        )
+        if (mark.every((v) => v.depth > 0.06)) {
+          ctx.fillStyle = '#65ded0'
+          ctx.beginPath()
+          mark.forEach((v, i) =>
+            i ? ctx.lineTo(v.x, v.y) : ctx.moveTo(v.x, v.y),
+          )
+          ctx.closePath()
+          ctx.fill()
+        }
+      }
       const shadow = project(pos)
       if (shadow.depth > 0.4 && opt.camera !== 'first') {
         ctx.fillStyle = '#42566940'
@@ -290,19 +319,9 @@ export function canvasMountain(
       }
       for (const leg of p.legs) {
         if (board && leg.side === 1) continue
-        const half = board ? 0.15 : 0.062,
-          edge = f.edge * radians
+        const half = board ? 0.15 : 0.062
         const deck = (s: number, z: number, y = 0): Point3 =>
-          board
-            ? local([
-                s * half * Math.cos(edge),
-                0.031 +
-                  half * Math.abs(Math.sin(edge)) -
-                  s * half * Math.sin(edge) +
-                  y,
-                z,
-              ])
-            : local(deckPoint(leg.deck, [s * half, y, z]))
+          local(deckPoint(leg.deck, [s * half, y, z]))
         const vertices = (ring: number[][], color: string) => {
           const points = ring.map(([x, z, y]) => project(deck(x, z, y)))
           if (points.some((q) => q.depth < 0.06)) return
@@ -346,24 +365,19 @@ export function canvasMountain(
           0.032,
         )
       }
-      const torso = (v: Point3) =>
-        local(
-          add3(p.base, [
-            Math.cos(p.yaw) * v[0] +
-              Math.sin(p.yaw) * v[2] +
-              p.lean * v[1] * 0.32,
-            v[1],
-            -Math.sin(p.yaw) * v[0] +
-              Math.cos(p.yaw) * v[2] -
-              0.22 * v[1] -
-              f.tuck * v[1] * 0.29,
-          ]),
-        )
+      const torso = (v: Point3) => local(transformPoint(p.torso, v))
       if (opt.camera !== 'first') {
         for (const l of p.legs) {
           stroke(local(l.hip), local(l.knee), '#273744', 0.212)
           stroke(local(l.knee), local(l.ankle), '#23313c', 0.17)
           ball(local(l.ankle), 0.081, '#24333b')
+          if (board)
+            stroke(
+              local(deckPoint(l.deck, [-0.1, 0.058, l.side * 0.28])),
+              local(deckPoint(l.deck, [0.15, 0.058, l.side * 0.28])),
+              '#28363c',
+              0.095,
+            )
         }
         stroke(torso([0, 0.023, 0]), torso([0, 0.41, 0]), '#da652c', 0.39)
         stroke(
@@ -378,24 +392,37 @@ export function canvasMountain(
             0.11,
             -0.21 + s * p.shifty * 0.16,
           ])
-          if (p.grab?.hand === s)
+          let elbow = torso([s * 0.32, 0.22, -0.015])
+          if (p.grab?.hand === s) {
             hand = add3(
               scale3(hand, 1 - p.grab.weight),
               scale3(local(p.grab.point), p.grab.weight),
             )
-          stroke(
-            torso([s * 0.19, 0.4, 0]),
-            torso([s * 0.32, 0.22, -0.015]),
-            '#de6d33',
-            0.152,
-          )
-          stroke(torso([s * 0.32, 0.22, -0.015]), hand, '#c2552d', 0.118)
+            elbow = add3(
+              scale3(elbow, 1 - p.grab.weight),
+              scale3(local(p.grab.elbow), p.grab.weight),
+            )
+          }
+          stroke(torso([s * 0.218, 0.423, -0.03]), elbow, '#de6d33', 0.152)
+          stroke(elbow, hand, '#c2552d', 0.118)
           ball(hand, 0.061, '#1c292e')
           if (!board)
             stroke(hand, local([s * 0.62, 0.065, 0.39]), '#586975', 0.013)
         }
         ball(torso([0, 0.58, -0.06]), 0.125, '#253238')
-        ball(torso([0, 0.683, -0.05]), 0.151, '#26343d')
+        const helmet = torso([0, 0.683, -0.082])
+        ball(helmet, 0.151, '#26343d')
+        const gaze = board
+          ? boardHeadYaw(f)
+          : 0.62 * shoulderLook(f) - 0.25 * f.heading
+        const goggles = (side: number) =>
+          torso([
+            side * 0.105 * Math.cos(gaze) - 0.13 * Math.sin(gaze),
+            0.687,
+            -0.082 - side * 0.105 * Math.sin(gaze) - 0.13 * Math.cos(gaze),
+          ])
+        if (dot(sub(goggles(0), helmet), sub(eye, helmet)) > 0)
+          stroke(goggles(-1), goggles(1), '#76aeb8', 0.058)
       }
       let upper = com,
         lower = local(p.legs[p.outside].knee)
@@ -419,6 +446,12 @@ export function canvasMountain(
         ball(com, 0.032, lensColors.body)
         if (p.grab?.engaged) {
           lower = local(p.grab.point)
+          const bend = local(p.grab.elbow),
+            shoulder = local(p.grab.shoulder)
+          stroke(shoulder, bend, lensColors.body, 0.013)
+          stroke(bend, lower, lensColors.body, 0.013)
+          ball(bend, 0.025, '#f6f2ff')
+          ball(shoulder, 0.025, '#f6f2ff')
           const grip = project(lower)
           if (grip.depth > 0.06) {
             ctx.strokeStyle = lensColors.support
@@ -463,6 +496,7 @@ export function canvasMountain(
       if (plate || !opt.line) target.visible = false
       return {
         upper: screen(upper),
+        leading: screen(local(p.leadingEnd)),
         lower: screen(lower),
         gate: target,
         bearing: (320 + Math.atan2(fw[0], -fw[2]) / radians + 360) % 360,

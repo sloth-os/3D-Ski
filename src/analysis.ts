@@ -1,6 +1,19 @@
-import { isTrick, tricks, usesPose, isSpin } from './tricks.ts'
-import { trickPhase } from './air.ts'
-import { courses, equipmentFor, techniques, type Setup } from './course.ts'
+import {
+  isTrick,
+  tricks,
+  usesPose,
+  isSpin,
+  gripFor,
+  requiredSpin,
+} from './tricks.ts'
+import { trickPhase, bodyHeading, foreAftPress, shoulderLook } from './air.ts'
+import {
+  courses,
+  equipmentFor,
+  techniques,
+  startsSwitch,
+  type Setup,
+} from './course.ts'
 import {
   clamp,
   emptyFrame,
@@ -34,54 +47,54 @@ const dot = (a: Point3, b: Point3) => a[0] * b[0] + a[1] * b[1] + a[2] * b[2]
 export const magnitude = (a: Point3) => Math.hypot(...a)
 const unit = (a: Point3) => scale3(a, 1 / (magnitude(a) || 1))
 
-// A two-link leg solves hip and ankle constraints; reported flexion is measured from those same links.
-function kneeBetween(hip: Point3, ankle: Point3, forward: Point3) {
-  const axis = unit(add3(hip, scale3(ankle, -1))),
-    d = clamp(magnitude(add3(hip, scale3(ankle, -1))), 0.17, 0.874)
-  const shin = 0.425,
-    thigh = 0.452,
-    along = (shin ** 2 - thigh ** 2 + d * d) / (2 * d)
-  const toward = unit(add3(forward, scale3(axis, -dot(forward, axis))))
-  const knee = add3(
-    add3(ankle, scale3(axis, along)),
-    scale3(toward, Math.sqrt(Math.max(0.0001, shin ** 2 - along ** 2))),
+// Intersect two fixed-length segments in the limb's bend plane.
+function bendJoint(
+  start: Point3,
+  end: Point3,
+  bend: Point3,
+  upper: number,
+  lower: number,
+  minReach: number,
+) {
+  const span = add3(start, scale3(end, -1)),
+    axis = unit(span),
+    d = clamp(magnitude(span), minReach, upper + lower - 0.003),
+    along = (lower ** 2 - upper ** 2 + d * d) / (2 * d)
+  const toward = unit(add3(bend, scale3(axis, -dot(bend, axis))))
+  return add3(
+    add3(end, scale3(axis, along)),
+    scale3(toward, Math.sqrt(Math.max(0.0001, lower ** 2 - along ** 2))),
   )
-  const upper = unit(add3(hip, scale3(knee, -1))),
-    lower = unit(add3(knee, scale3(ankle, -1)))
-  return { knee, angle: Math.acos(clamp(dot(upper, lower), -1, 1)) / radians }
 }
-type DeckTransform = {
+type RigidTransform = {
   origin: Point3
   pitch: number
   yaw: number
   roll: number
 }
-// Apply the same YXZ rotation order as the equipment group in the WebGL rig.
-export function deckPoint(deck: DeckTransform, point: Point3): Point3 {
+// Both renderers use the same YXZ rotation order for equipment and upper body.
+export function transformPoint(
+  transform: RigidTransform,
+  point: Point3,
+): Point3 {
   const [x, y, z] = point,
-    cr = Math.cos(deck.roll),
-    sr = Math.sin(deck.roll)
+    cr = Math.cos(transform.roll),
+    sr = Math.sin(transform.roll)
   const rx = x * cr - y * sr,
     ry = x * sr + y * cr
-  const cp = Math.cos(deck.pitch),
-    sp = Math.sin(deck.pitch),
+  const cp = Math.cos(transform.pitch),
+    sp = Math.sin(transform.pitch),
     py = ry * cp - z * sp,
     pz = ry * sp + z * cp
-  const cy = Math.cos(deck.yaw),
-    sy = Math.sin(deck.yaw)
-  return add3(deck.origin, [rx * cy + pz * sy, py, -rx * sy + pz * cy])
+  const cy = Math.cos(transform.yaw),
+    sy = Math.sin(transform.yaw)
+  return add3(transform.origin, [rx * cy + pz * sy, py, -rx * sy + pz * cy])
 }
-function endPress(f: Frame, id: Setup['technique']) {
-  const sign = id === 'ollie' ? 1 : id === 'nollie' ? -1 : 0
-  const a = f.air
-  if (a.phase === 'load') return sign * a.charge
-  if (a.phase === 'flight')
-    return sign * a.charge * Math.max(0, 1 - (2.8 * a.elapsed) / a.duration)
-  return 0
-}
+export const deckPoint = transformPoint
 export function riderPose(f: Frame, setup: Setup) {
   const board = equipmentFor(setup.technique) === 'snowboard',
-    lean = clamp(f.lean, -0.89, 0.89)
+    facing = Math.cos(bodyHeading(f)),
+    lean = clamp(f.lean * facing, -0.89, 0.89)
   const ripple =
     Math.sin(f.d * 0.34) * 0.01 * Math.min(f.speed / 9, 1) * (1 - f.flex)
   const flex = clamp(
@@ -91,36 +104,82 @@ export function riderPose(f: Frame, setup: Setup) {
     0.1,
     1,
   )
-  const lateral = Math.sin(lean) * 0.56 + Math.sin(f.edge * radians) * 0.085
+  const roll = f.edge * radians * facing
+  const lateral = Math.sin(lean) * 0.56 + Math.sin(roll) * 0.085
   const id = setup.technique,
     a = f.air,
     flying = a.phase === 'flight'
   const time = flying ? clamp(a.elapsed / a.duration, 0, 1) : 0
-  const press = endPress(f, id)
-  const shifty = id === 'shifty' ? a.pose * a.direction : 0
-  const grabAmount = id === 'safetyGrab' || id === 'muteGrab' ? a.pose : 0
+  const press = foreAftPress(f, id)
+  const shifty =
+    id === 'boardShifty'
+      ? a.pose * (a.switch ? 1 : -1)
+      : id === 'shifty'
+        ? a.pose * a.direction
+        : 0
+  const grip = gripFor(id, a.switch)
+  const grabAmount = grip ? a.pose : 0
   const crossed = id === 'muteGrab' ? grabAmount : 0
   const yaw = board
-    ? -1.24 + f.heading * 0.13
-    : f.heading * 0.28 + 0.56 * shifty
-  const hipYaw = yaw - 1.15 * shifty
+    ? -1.24 + f.heading * 0.13 + 0.49 * shifty
+    : f.heading * 0.28 + 0.56 * shifty + 0.38 * shoulderLook(f)
+  const hipYaw = board
+    ? yaw - 1.16 * shifty
+    : f.heading * 0.28 - 0.59 * shifty + 0.08 * shoulderLook(f)
   const lift = 0.075 * Math.sin(Math.PI * time) + 0.24 * grabAmount
+  const noseReach =
+    id === 'boardNoseGrab' ? grabAmount * (a.switch ? -1 : 1) : 0
+  const boardDeck: RigidTransform = {
+    origin: [
+      0,
+      0.031 +
+        0.148 * Math.abs(Math.sin(roll)) +
+        0.79 * Math.abs(Math.sin(0.32 * press)) +
+        lift +
+        0.045 * grabAmount,
+      0,
+    ],
+    pitch: 0.32 * press + 0.59 * noseReach,
+    yaw: -1.04 * shifty,
+    roll:
+      -roll +
+      (grip?.target === 'heel edge'
+        ? -0.18
+        : grip?.target === 'toe edge'
+          ? 0.18
+          : 0) *
+        grabAmount,
+  }
   const base: Point3 = [
-    lateral,
+    lateral - (board ? 0.2 * grabAmount : 0),
     0.935 -
       flex * 0.235 -
       Math.abs(lateral) * 0.18 +
       ripple -
-      0.065 * grabAmount,
-    0.039 + flex * 0.11 - f.tuck * 0.07 + 0.18 * press,
+      (board ? 0 : 0.065) * grabAmount,
+    0.039 + flex * 0.11 - f.tuck * 0.07 + 0.18 * press - 0.18 * noseReach,
   ]
-  const forward: Point3 = [-Math.sin(yaw), 0, -Math.cos(yaw)]
+  const torso: RigidTransform = {
+    origin: base,
+    yaw,
+    pitch:
+      -0.16 -
+      f.tuck * 0.45 -
+      (board ? 0.13 : 0.03) * flex -
+      (board ? 0.45 * grabAmount : 0),
+    roll:
+      -lean * 0.36 -
+      (board && grip
+        ? grip.hand * (id === 'boardNoseGrab' ? 0.55 : 0.3) * grabAmount
+        : 0),
+  }
+  const forward: Point3 = [-Math.sin(hipYaw), 0, -Math.cos(hipYaw)]
   const legs = ([-1, 1] as const).map((side) => {
-    const roll = f.edge * radians,
-      half = board ? 0.148 : 0.064,
+    const half = board ? 0.148 : 0.064,
       baseX = board ? 0 : side * (0.196 + 0.065 * f.brake)
     const z = board ? side * 0.28 : side * Math.sin(lean) * 0.14
-    const stagger = a.switch && !flying ? side * 0.09 : 0
+    const stagger =
+      board || flying ? 0 : (side * 0.12 * f.lookSide * (1 - facing)) / 2
     const skiPitch = press * 0.31,
       twist = -1.04 * shifty
     const origin: Point3 = [
@@ -133,58 +192,90 @@ export function riderPose(f: Frame, setup: Setup) {
         (side > 0 ? 0.07 : 0) * crossed,
       z - baseX * Math.sin(twist) + stagger,
     ]
-    const deck: DeckTransform = {
-      origin,
-      pitch: skiPitch,
-      yaw:
-        twist +
-        side *
-          ((id === 'wedge' ? 0.18 : 0.008) + f.brake * 0.33 + 0.53 * crossed),
-      roll: -roll,
-    }
-    const ankle: Point3 = board
-      ? [
-          baseX + 0.148 * Math.sin(roll),
-          0.031 + half * Math.abs(Math.sin(roll)) + 0.148 * Math.cos(roll),
-          z,
-        ]
-      : deckPoint(deck, [0, 0.148, 0])
+    const deck: RigidTransform = board
+      ? boardDeck
+      : {
+          origin,
+          pitch: skiPitch,
+          yaw:
+            twist +
+            side *
+              (((id === 'wedge' ? 0.18 : 0.008) + f.brake * 0.33) * facing +
+                0.53 * crossed),
+          roll: -roll,
+        }
+    const ankle = deckPoint(deck, [0, 0.148, board ? z : 0])
     const contact: Point3 = [
       baseX + Math.sign(roll) * half * Math.cos(roll),
       0.022 + lift,
-      z + stagger + 0.83 * press,
+      board
+        ? z * (1 - 0.8 * Math.abs(press)) + 0.65 * press
+        : z + stagger + 0.83 * press,
     ]
     const hip: Point3 = add3(base, [
       Math.cos(hipYaw) * side * 0.135,
       side * 0.038 * Math.sin(lean),
       -Math.sin(hipYaw) * side * 0.135,
     ])
-    const solved = kneeBetween(
+    const knee = bendJoint(
       hip,
       ankle,
       add3(forward, [0.23 * Math.sin(f.edge * radians), 0, 0]),
+      0.452,
+      0.425,
+      0.17,
     )
-    return { side, hip, ankle, contact, deck, ...solved }
+    const thigh = unit(add3(hip, scale3(knee, -1))),
+      shin = unit(add3(knee, scale3(ankle, -1)))
+    const angle = Math.acos(clamp(dot(thigh, shin), -1, 1)) / radians
+    return { side, hip, ankle, contact, deck, knee, angle }
   })
-  const outside = board ? 0 : f.edge >= 0 ? 0 : 1
+  const outside = board ? (a.switch ? 1 : 0) : roll >= 0 ? 0 : 1
   const com: Point3 = add3(base, [
     lateral * 0.12,
     0.136,
     -0.034 - 0.135 * f.tuck,
   ])
-  const grab =
-    grabAmount > 0
-      ? {
-          hand: id === 'muteGrab' ? -1 : 1,
-          weight: grabAmount,
-          engaged: grabAmount >= 0.99,
-          point: deckPoint(legs[1].deck, [0.059, 0.014, -0.235]),
-        }
-      : null
+  let grab = null
+  if (grip && grabAmount > 0) {
+    const lead = a.switch ? 1 : -1
+    let point: Point3
+    switch (grip.target) {
+      case 'toe edge':
+        point = deckPoint(boardDeck, [0.116, 0.009, -lead * 0.155])
+        break
+      case 'heel edge':
+        point = deckPoint(boardDeck, [-0.116, 0.009, lead * 0.155])
+        break
+      case 'nose':
+        point = deckPoint(boardDeck, [0, 0.078, -0.819])
+        break
+      case 'leading tail':
+        point = deckPoint(boardDeck, [0, 0.052, 0.754])
+        break
+      default:
+        point = deckPoint(legs[1].deck, [0.059, 0.014, -0.235])
+    }
+    const shoulder = transformPoint(torso, [grip.hand * 0.218, 0.423, -0.03])
+    const outward = add3(
+      transformPoint(torso, [grip.hand * 0.78, -0.22, 0.48]),
+      scale3(base, -1),
+    )
+    const elbow = bendJoint(shoulder, point, outward, 0.35, 0.35, 0.04)
+    grab = {
+      ...grip,
+      weight: grabAmount,
+      engaged: grabAmount >= 0.99,
+      point,
+      shoulder,
+      elbow,
+    }
+  }
   // Vertical clearance over the local snow plane. Joint positions are in the slope-aligned rider frame.
   const comHeight = a.height + com[1] / Math.cos(f.pitch * radians)
   return {
     base,
+    torso,
     yaw,
     hipYaw,
     forward,
@@ -196,6 +287,11 @@ export function riderPose(f: Frame, setup: Setup) {
     comHeight,
     grab,
     shifty,
+    leadingEnd: deckPoint(legs[board ? 0 : 1].deck, [
+      0,
+      0.068,
+      board ? (a.switch ? 0.754 : -0.819) : a.switch ? 0.82 : -0.91,
+    ]),
   }
 }
 export function analyse(f: Frame, setup: Setup) {
@@ -231,11 +327,11 @@ export function analyse(f: Frame, setup: Setup) {
   const firstShare = flying
     ? 0.5
     : board
-      ? frontBindingShare(f)
-      : (f.edge >= 0 ? f.load : 100 - f.load) / 100
+      ? frontBindingShare(f, setup)
+      : (f.edge * Math.cos(bodyHeading(f)) >= 0 ? f.load : 100 - f.load) / 100
   const contactFraction = flying
     ? 0
-    : 1 - 0.75 * Math.abs(endPress(f, setup.technique))
+    : 1 - 0.75 * Math.abs(foreAftPress(f, setup.technique))
   const area =
     contactFraction *
     (board ? 0.34 : 0.245) *
@@ -266,12 +362,12 @@ export function analyse(f: Frame, setup: Setup) {
       : board
         ? Math.abs(f.edge) < 3
           ? 'Flat base'
-          : f.edge > 0
+          : f.edge * Math.cos(bodyHeading(f)) > 0
             ? 'Toe edge'
             : 'Heel edge'
         : Math.abs(f.edge) < 3
           ? 'Flat bases'
-          : f.edge > 0
+          : f.edge * Math.cos(bodyHeading(f)) > 0
             ? 'Left ski'
             : 'Right ski',
     phase: isTrick(setup.technique)
@@ -294,18 +390,24 @@ export function idealTurn(
   peak: number,
   kmh: number,
   phase = 0,
+  switched = startsSwitch(setup),
 ): Frame {
-  const f = emptyFrame(),
+  const f = emptyFrame(setup),
     speed = kmh / 3.6,
     transfer = Math.cos(phase)
   f.d = 15
+  f.air.switch = f.air.startSwitch = switched
   f.t = phase / 1.2
   f.speed = speed
   f.edge = peak * transfer
+  f.lookSide = -Math.tanh(f.edge / 9)
   f.edgeRate = -1.2 * peak * Math.sin(phase)
   f.pitch = pitchAt(courses[setup.course], f.d) / radians
-  f.radius = techniques[setup.technique].sidecut * Math.cos(f.edge * radians)
-  f.lateralAccel = (transfer * speed ** 2) / f.radius
+  const sidecutRadius =
+    techniques[setup.technique].sidecut * Math.cos(f.edge * radians)
+  f.radius =
+    Math.abs(f.edge) > 1e-6 ? sidecutRadius / Math.abs(transfer) : Infinity
+  f.lateralAccel = (Math.sign(f.edge) * speed ** 2) / f.radius
   f.normalAccel = gravity * Math.cos(f.pitch * radians)
   f.lean = Math.atan2(f.lateralAccel, f.normalAccel)
   f.load = clamp(
@@ -322,13 +424,20 @@ export function idealTurn(
 export function coachingCue(f: Frame, setup: Setup) {
   const board = equipmentFor(setup.technique) === 'snowboard',
     drill = techniques[setup.technique]
+  if (f.pivot)
+    return 'Keep the base flat while the equipment pivots across the direction of travel.'
   if (isTrick(setup.technique)) {
     const a = f.air,
       id = setup.technique
-    if (a.phase === 'load')
-      return isSpin(id)
-        ? 'Hold a direction and release J when the pop meter is full.'
-        : 'Release J to take off.'
+    if (a.phase === 'load') {
+      if (!isSpin(id)) return 'Release the pop to take off.'
+      const turn = requiredSpin(id, a.switch)
+      const direction =
+        turn < 0 ? 'left' : turn > 0 ? 'right' : 'a steering direction'
+      return (
+        'Hold ' + direction + ' and release the pop when the meter is full.'
+      )
+    }
     if (a.phase === 'flight')
       return usesPose(id)
         ? a.elapsed < a.duration * 0.6
@@ -339,22 +448,43 @@ export function coachingCue(f: Frame, setup: Setup) {
       switch (a.result) {
         case 'Clean landing':
           return a.switch
-            ? 'Ride switch and look over your shoulder.'
-            : 'Ride out centered over both skis.'
+            ? board
+              ? 'Ride out with your right foot leading and look past the tail binding.'
+              : 'Ride out tails first and look over the outside shoulder.'
+            : board
+              ? 'Ride out balanced between both bindings.'
+              : 'Ride out centered over both skis.'
         case 'Late release':
-          return 'Release the pose earlier so the skis reopen before contact.'
+          return board
+            ? 'Release the pose earlier and level the deck before contact.'
+            : 'Release the pose earlier so the skis reopen before contact.'
         case 'Pose missed':
           return 'Hold the pose through the middle of the jump.'
         case 'Under-rotated':
           return 'Fill the pop meter and hold a direction as you take off.'
         case 'Over-rotated':
           return 'Try a shorter pop here. This landing gives the spin more airtime.'
+        case 'Opposite spin':
+          return (
+            'Set the spin ' +
+            (requiredSpin(id, a.startSwitch) < 0 ? 'left' : 'right') +
+            ' from that starting stance.'
+          )
         case 'Short pop':
           return 'Hold the pop longer before releasing.'
       }
     }
     return tricks[id].cue
   }
+  if (f.air.switch)
+    return board
+      ? Math.abs(f.edge) < 5
+        ? 'Right foot leads. Roll through a flat base to change edges.'
+        : analyse(f, setup).edgeName +
+          ' engaged. Look along the board past the leading binding.'
+      : Math.abs(f.edge) < 5
+        ? 'Change the stagger and look into the next switch turn.'
+        : 'Guide the tails and look over the outside shoulder.'
   if (f.t - f.lastGateTime < 1.8)
     return f.lastGateHit
       ? 'Gate cleared. Soften the legs and look toward the next gate.'

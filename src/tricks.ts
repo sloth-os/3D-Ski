@@ -1,4 +1,5 @@
-// Each park lesson also uses the parallel-ski steering profile on its approach and ride-out.
+import { boardTricks } from './boardTricks.ts'
+// Ski park lessons use the parallel-ski steering profile on approach and ride-out.
 const skiProfile = { sidecut: 19, response: 1, edge: [18, 38] as const }
 export const freestyleGuide =
   'https://thesnowpros.org/wp-content/uploads/2025/01/Frestyle-Specialist-Performance-Guide-Nov2022_2-2.pdf'
@@ -17,7 +18,7 @@ type Lesson = {
 function lesson(data: Lesson) {
   return { ...skiProfile, ...data, source: library + data.source }
 }
-export const tricks = {
+export const skiTricks = {
   straightAir: lesson({
     name: 'Straight air',
     category: 'Freestyle · Pop',
@@ -246,10 +247,54 @@ export const tricks = {
       'Use the aerial camera to separate the rotation of the equipment from the direction of travel.',
   }),
 } as const
+export const tricks = { ...skiTricks, ...boardTricks }
 export type TrickId = keyof typeof tricks
+export function isBoardTrick(id: string): id is keyof typeof boardTricks {
+  return Object.hasOwn(boardTricks, id)
+}
 export function isTrick(id: string): id is TrickId {
   return Object.hasOwn(tricks, id)
 }
-export const isSpin = (id: TrickId) => id === 'spin180' || id === 'spin360'
+export function spinDegrees(id: TrickId) {
+  switch (id) {
+    case 'spin360':
+    case 'boardFS360':
+      return 360
+    case 'spin180':
+    case 'boardFS180':
+    case 'boardBS180':
+      return 180
+    default:
+      return 0
+  }
+}
+export const isSpin = (id: TrickId) => spinDegrees(id) > 0
+// Positive steering rotates the nose toward the right of the travel path.
+export function requiredSpin(id: TrickId, switched: boolean) {
+  const frontside = switched ? 1 : -1
+  if (id === 'boardBS180') return -frontside
+  return id === 'boardFS180' || id === 'boardFS360' ? frontside : 0
+}
+export function gripFor(id: string, switched: boolean) {
+  const lead = switched ? 1 : -1
+  switch (id) {
+    case 'muteGrab':
+      return { hand: -1, target: 'right ski' } as const
+    case 'safetyGrab':
+      return { hand: 1, target: 'right ski' } as const
+    case 'boardIndy':
+      return { hand: -lead, target: 'toe edge' } as const
+    case 'boardMelon':
+      return { hand: lead, target: 'heel edge' } as const
+    case 'boardNoseGrab':
+      return { hand: lead, target: switched ? 'leading tail' : 'nose' } as const
+    default:
+      return null
+  }
+}
 export const usesPose = (id: TrickId) =>
-  id === 'shifty' || id === 'safetyGrab' || id === 'muteGrab'
+  id === 'shifty' || id === 'boardShifty' || !!gripFor(id, false)
+export function popEnd(id: string) {
+  if (id === 'ollie' || id === 'boardOllie') return 1
+  return id === 'nollie' || id === 'boardNollie' ? -1 : 0
+}

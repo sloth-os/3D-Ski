@@ -56,41 +56,47 @@ function jump(
   return f
 }
 
-test('all 72 course and snow combinations replay a complete scored freestyle jump', () => {
+test('all 17 tricks replay a complete scored jump on each course and snow surface from both starting stances', () => {
   for (const technique of Object.keys(tricks) as TrickId[]) {
     for (const course of Object.keys(courses) as CourseId[]) {
       for (const surface of Object.keys(surfaces) as SurfaceId[]) {
-        const setup = { technique, course, surface }
-        const frames = trickReplay(setup),
-          end = frames.at(-1)!
-        const phases = frames
-          .map(trickPhase)
-          .filter((phase, i, all) => phase !== all[i - 1])
-        assert.deepEqual(phases, [
-          'Approach',
-          'Takeoff',
-          'Maneuver',
-          'Landing',
-          'Approach',
-        ])
-        assert.equal(
-          end.air.result,
-          'Clean landing',
-          technique + ' ' + course + ' ' + surface,
-        )
-        assert.equal(end.air.attempts, 1)
-        assert.equal(end.air.landed, 1)
-        assert.equal(end.air.points, tricks[technique].points)
-        assert.equal(end.air.switch, technique === 'spin180')
-        const touchdown = frames.find((s) => s.air.phase === 'landing')!
-        assert.ok(touchdown.normalAccel > gravity)
-        near(
-          touchdown.air.worldY,
-          worldHeight(courses[course], touchdown.d, touchdown.x),
-          0.001,
-        )
-        assert.equal(end.air.height, 0)
-        assert.equal(new Set(frames.map((s) => s.air)).size, frames.length)
+        for (const stance of ['forward', 'switch'] as const) {
+          const setup = { technique, course, surface, stance }
+          const frames = trickReplay(setup),
+            end = frames.at(-1)!
+          const phases = frames
+            .map(trickPhase)
+            .filter((phase, i, all) => phase !== all[i - 1])
+          assert.deepEqual(phases, [
+            'Approach',
+            'Takeoff',
+            'Maneuver',
+            'Landing',
+            'Approach',
+          ])
+          assert.equal(
+            end.air.result,
+            'Clean landing',
+            technique + ' ' + course + ' ' + surface,
+          )
+          assert.equal(end.air.attempts, 1)
+          assert.equal(end.air.landed, 1)
+          assert.equal(end.air.points, tricks[technique].points)
+          const halfTurn = ['spin180', 'boardFS180', 'boardBS180'].includes(
+            technique,
+          )
+          assert.equal(end.air.startSwitch, stance === 'switch')
+          assert.equal(end.air.switch, (stance === 'switch') !== halfTurn)
+          const touchdown = frames.find((s) => s.air.phase === 'landing')!
+          assert.ok(touchdown.normalAccel > gravity)
+          near(
+            touchdown.air.worldY,
+            worldHeight(courses[course], touchdown.d, touchdown.x),
+            0.001,
+          )
+          assert.equal(end.air.height, 0)
+          assert.equal(new Set(frames.map((s) => s.air)).size, frames.length)
+        }
       }
     }
   }

@@ -13,6 +13,7 @@ import {
   courses,
   equipmentFor,
   equipmentName,
+  isSwitchDrill,
   surfaces,
   techniques,
 } from './course.ts'
@@ -52,13 +53,18 @@ export function Controls() {
     },
     {
       keys: ['J'],
-      name: 'Pop on skis',
-      text: 'In a ski trick drill, hold to preload the legs, then release to jump. A fuller charge gives more airtime.',
+      name: 'Pop on skis or a board',
+      text: 'In a freestyle trick drill, hold to preload the legs, then release to jump. A fuller charge gives more airtime.',
     },
     {
       keys: ['K'],
       name: 'Pose or grab',
       text: 'In shifty and grab drills, hold K after takeoff and release before touching down. In spin drills, hold left or right as J is released to set the rotation.',
+    },
+    {
+      keys: ['V'],
+      name: 'Pivot into or out of switch',
+      text: 'Tap V or the on-screen stance button to perform a surface 180. Steering stays relative to downhill travel. Choose a starting stance in Run setup.',
     },
     {
       keys: ['C'],
@@ -115,22 +121,22 @@ export function TelemetryHelp({ board }: { board: boolean }) {
   return (
     <div className="help-copy">
       <p className="modal-intro">
-        The preview shows a reference skier on your selected terrain. Starting a
+        The preview shows a reference rider on your selected terrain. Starting a
         run connects the instruments to your inputs.
       </p>
       {[
         [
           'Speed',
-          'Gravity accelerates the skier down the fall line. Air drag, skidding, and snow friction reduce speed.',
+          'Gravity accelerates the rider down the fall line. Air drag, skidding, and snow friction reduce speed.',
         ],
         [
           'Edge angle',
-          'The angle between ski base and snow grows as you hold a steering input. It falls through zero as you change edges.',
+          'The angle between the base and the snow grows as you hold a steering input. It passes through zero as you change edges.',
         ],
         [
-          board ? 'Front binding load' : 'Outside ski load',
+          board ? 'Binding load' : 'Outside ski load',
           board
-            ? 'The modeled share of normal support at the front binding varies with posture, braking, and edge transition.'
+            ? 'The nose and tail bindings share the normal force. The nose binding leads in regular and the tail binding leads in switch. Loading an ollie shifts pressure toward the trailing foot.'
             : 'The modeled share of support on the outside ski increases with lateral acceleration and edge angle.',
         ],
         [
@@ -194,9 +200,23 @@ export function RunDetails({
               (metric ? 'km/h' : 'mph'),
           ],
           [
-            record.freestyle ? 'Clean landings' : 'In edge range',
+            record.freestyle
+              ? 'Clean landings'
+              : isSwitchDrill(record.setup.technique)
+                ? 'Switch edge control'
+                : 'In edge range',
             record.quality + '%',
           ],
+          ...(record.switchRide
+            ? [
+                [
+                  'Switch distance',
+                  lengthText(record.switchRide.distance, units),
+                ],
+                ['Switch linked turns', record.switchRide.turns],
+                ['Switch gates', record.switchRide.gates],
+              ]
+            : []),
           ...(record.freestyle
             ? [
                 [
@@ -219,7 +239,7 @@ export function RunDetails({
         <div>
           <h3>Next run</h3>
           <p>
-            {record.freestyle
+            {record.freestyle || isSwitchDrill(record.setup.technique)
               ? techniques[record.setup.technique].watch
               : record.gates === c.gates
                 ? 'You cleared every gate. Repeat on a different snow surface and compare your turn shape.'

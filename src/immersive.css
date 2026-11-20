@@ -287,6 +287,43 @@ body {
   background: #162a36a8;
   padding: 0 8px;
 }
+.stance-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  min-height: 25px;
+  padding: 3px 7px;
+  pointer-events: auto;
+  white-space: nowrap;
+  color: #d4fff0;
+  background: #183d3dd9;
+  border: 1px solid #80c9ba90;
+  border-radius: 4px;
+  text-decoration: none;
+  font:
+    600 10px 'DM Sans Variable',
+    sans-serif;
+  letter-spacing: normal;
+  text-transform: none;
+}
+.stance-chip:hover,
+.stance-chip:focus-visible {
+  background: #285251;
+}
+.stance-chip:disabled {
+  cursor: default;
+}
+.stance-chip kbd {
+  font: 500 8px var(--mono);
+  color: #c2d8d7;
+  border-left: 1px solid #729c9b;
+  padding-left: 4px;
+}
+.stance-note {
+  margin: 3px 0;
+  color: #cce2da;
+  font-size: 13px;
+}
 .equipped {
   pointer-events: auto;
   gap: 6px;
@@ -1080,6 +1117,7 @@ body {
 }
 .lesson-collections {
   display: flex;
+  flex-wrap: wrap;
   gap: 16px;
   border-bottom: 1px solid #39494f;
 }
@@ -1716,6 +1754,31 @@ body {
   order: -1;
   min-width: 0;
 }
+.switch-hud {
+  border-left-color: #6ce1d0;
+}
+.switch-hud .hud-kicker {
+  color: #a8eedf;
+}
+.trick-study.switch-study .study-foot {
+  justify-content: space-between;
+}
+.switch-readout {
+  position: absolute;
+  top: 10px;
+  left: 10px;
+  max-width: calc(100% - 84px);
+  color: #d7f6eb;
+  background: #152e32e8;
+  border: 1px solid #6a9490;
+  border-radius: 3px;
+  padding: 3px 6px;
+  font: 500 9px var(--mono);
+  pointer-events: none;
+}
+.switch-study .scheme-tabs {
+  margin-top: 10px;
+}
 .ski-sim .freestyle-lab .tech-tabs {
   display: flex;
   flex-wrap: wrap;
@@ -1899,6 +1962,27 @@ body {
   }
 }
 @media (max-width: 650px) {
+  .stance-chip {
+    min-height: 23px;
+    font-size: 9px;
+    padding: 2px 5px;
+  }
+  .lesson-collections {
+    display: grid;
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+    gap: 4px;
+  }
+  .lesson-collections button {
+    font-size: 10px;
+    line-height: 1.15;
+    min-height: 32px;
+  }
+  .ski-sim .freestyle-lab[data-collection='snowboard-tricks'] .tech-tabs {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+  .ski-sim .freestyle-lab[data-collection='switch-riding'] .tech-tabs {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
   .game-tools nav a {
     width: 27px;
   }
@@ -1929,6 +2013,12 @@ body {
   }
 }
 @media (pointer: coarse) {
+  .stance-chip {
+    min-height: 28px;
+  }
+  .stance-chip kbd {
+    display: none;
+  }
   .trick-hud .key-hint {
     display: none;
   }

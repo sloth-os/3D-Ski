@@ -3,6 +3,7 @@ import {
   ArrowDownRight,
   BookOpen,
   Orbit,
+  RotateCcw,
   Check,
   ChevronDown,
   Download,
@@ -26,6 +27,12 @@ import {
   techniques,
   equipmentFor,
   lessonInCollection,
+  collectionFor,
+  collectionNames,
+  isCollection,
+  isSwitchDrill,
+  stanceLabel,
+  type Collection,
   equipmentName,
   surfaces,
   type Setup,
@@ -58,7 +65,7 @@ import {
 import { Controls, Log, RunDetails, TelemetryHelp } from './Panels.tsx'
 import { Telemetry } from './Telemetry.tsx'
 import { Lab } from './Lab.tsx'
-import { isTrick, type TrickId } from './tricks.ts'
+import { isTrick } from './tricks.ts'
 import { useOffline } from './offline.ts'
 
 type Dialog =
@@ -66,19 +73,18 @@ type Dialog =
   | 'controls'
   | 'setup'
   | 'analysis'
-  | 'ski-tricks'
-  | 'technique-lab'
+  | Collection
   | 'run-log'
   | null
-const trickInHash = (): TrickId | null => {
-  const [section, id] = location.hash.split('/')
-  return section === '#ski-tricks' && id && isTrick(id) ? id : null
+const lessonInHash = (): TechniqueId | null => {
+  const [section, id] = location.hash.slice(1).split('/')
+  if (!id || !Object.hasOwn(techniques, id)) return null
+  const technique = id as TechniqueId
+  return collectionFor(technique) === section ? technique : null
 }
 const fromHash = (): Dialog => {
-  const section = location.hash.split('/')[0]
-  if (section === '#ski-tricks') return 'ski-tricks'
-  if (section === '#technique-lab') return 'technique-lab'
-  return section === '#run-log' ? 'run-log' : null
+  const section = location.hash.slice(1).split('/')[0]
+  return isCollection(section) || section === 'run-log' ? section : null
 }
 export default function App() {
   const [setup, setSetup] = useState<Setup>(initialSetup),
@@ -89,8 +95,8 @@ export default function App() {
     log = useRef(runs)
   const [labId, setLabId] = useState<TechniqueId>(() =>
       lessonInCollection(
-        dialog === 'ski-tricks',
-        trickInHash() ?? setup.technique,
+        isCollection(dialog) ? dialog : 'technique-lab',
+        lessonInHash() ?? setup.technique,
       ),
     ),
     [camera, setCamera] = useState<CameraMode>('chase'),
@@ -130,8 +136,8 @@ export default function App() {
   }
   function open(which: Dialog) {
     run.pause()
-    if (which === 'ski-tricks' || which === 'technique-lab')
-      setLabId(lessonInCollection(which === 'ski-tricks', setup.technique))
+    if (isCollection(which))
+      setLabId(lessonInCollection(which, setup.technique))
     if (which === 'analysis')
       setSnapshot({
         frame: { ...run.current.current },
@@ -139,16 +145,13 @@ export default function App() {
       })
     setDialog(which)
     setReview(null)
-    const hash =
-      which === 'run-log' || which === 'technique-lab' || which === 'ski-tricks'
-        ? '#' + which
-        : ''
+    const hash = which === 'run-log' || isCollection(which) ? '#' + which : ''
     history.replaceState(null, '', location.pathname + location.search + hash)
   }
-  function start(demo = false) {
+  function start(demo = false, initial = setup) {
     close()
     reset((n) => n + 1)
-    run.start(demo)
+    run.start(demo, initial)
     requestAnimationFrame(() => world.current?.focus({ preventScroll: true }))
   }
   function configure(s: Setup) {
@@ -160,8 +163,9 @@ export default function App() {
     close()
   }
   function practice(id: TechniqueId, demo = false) {
-    configure({ ...setup, technique: id })
-    start(demo)
+    const chosen = { ...setup, technique: id }
+    configure(chosen)
+    start(demo, chosen)
   }
   function changeLens(value: Lens) {
     setLens(value)
@@ -193,12 +197,9 @@ export default function App() {
         run.pause()
         const section = fromHash()
         setDialog(section)
-        if (section === 'ski-tricks' || section === 'technique-lab')
+        if (isCollection(section))
           setLabId(
-            lessonInCollection(
-              section === 'ski-tricks',
-              trickInHash() ?? setup.technique,
-            ),
+            lessonInCollection(section, lessonInHash() ?? setup.technique),
           )
         setReview(null)
       },
@@ -245,6 +246,11 @@ export default function App() {
       return
     }
     if (e.repeat) return
+    if (e.code === 'KeyV' && run.phase === 'running') {
+      e.preventDefault()
+      run.pivot()
+      return
+    }
     if (e.key === '?') {
       e.preventDefault()
       open('controls')
@@ -352,6 +358,18 @@ export default function App() {
               <span>Ski tricks</span>
             </a>
             <a
+              href="#snowboard-tricks"
+              title="Snowboard tricks"
+              aria-label="Snowboard tricks"
+              onClick={(e) => {
+                e.preventDefault()
+                open('snowboard-tricks')
+              }}
+            >
+              <Layers3 size={17} />
+              <span>Snowboard tricks</span>
+            </a>
+            <a
               href="#run-log"
               title="Run log"
               aria-label="Run log"
@@ -413,6 +431,45 @@ export default function App() {
             <ArrowDownRight size={13} />
             {preview ? c.pitch : Math.round(f.pitch)}° pitch
           </span>
+          {preview ? (
+            <a
+              className="stance-chip"
+              href="#switch-riding"
+              onClick={(e) => {
+                e.preventDefault()
+                open('switch-riding')
+              }}
+            >
+              <RotateCcw size={12} />
+              Switch riding
+            </a>
+          ) : (
+            <button
+              className="stance-chip"
+              data-stance={f.air.switch ? 'switch' : 'forward'}
+              disabled={
+                run.phase !== 'running' || !!f.pivot || f.air.phase !== 'ready'
+              }
+              onClick={run.pivot}
+              aria-label={f.air.switch ? 'Pivot to forward' : 'Pivot to switch'}
+              title={
+                stanceLabel(
+                  equipmentFor(setup.technique) === 'snowboard',
+                  f.air.switch,
+                ) + ' · V to pivot'
+              }
+            >
+              <RotateCcw size={12} />
+              {f.pivot
+                ? 'Pivoting'
+                : f.air.switch
+                  ? 'Switch'
+                  : equipmentFor(setup.technique) === 'snowboard'
+                    ? 'Regular'
+                    : 'Forward'}
+              <kbd>V</kbd>
+            </button>
+          )}
         </div>
         <button className="equipped" onClick={() => open('setup')}>
           <Layers3 size={14} />
@@ -458,6 +515,30 @@ export default function App() {
       />
       {isTrick(setup.technique) ? (
         <TrickHUD frame={f} id={setup.technique} preview={preview} />
+      ) : isSwitchDrill(setup.technique) ? (
+        <section
+          className="trick-hud switch-hud"
+          aria-label="Switch practice"
+          data-stance={f.air.switch ? 'switch' : 'forward'}
+        >
+          <span className="hud-kicker">
+            {f.pivot
+              ? 'Surface pivot'
+              : stanceLabel(
+                  equipmentFor(setup.technique) === 'snowboard',
+                  f.air.switch,
+                )}
+          </span>
+          <header>
+            <strong>{techniques[setup.technique].name}</strong>
+          </header>
+          <footer>
+            <span>
+              {lengthText(preview ? 0 : f.switchDistance, prefs.units)} switch
+            </span>
+            <span>{preview ? 0 : f.switchTurns} linked turns</span>
+          </footer>
+        </section>
       ) : (
         <div className="technique-cue">
           <span className="hud-kicker">
@@ -531,9 +612,13 @@ export default function App() {
           </details>
         </Modal>
       )}
-      {(dialog === 'technique-lab' || dialog === 'ski-tricks') && (
+      {isCollection(dialog) && (
         <Modal
-          title={dialog === 'ski-tricks' ? 'Ski tricks' : 'Technique lab'}
+          title={
+            dialog === 'technique-lab'
+              ? 'Technique lab'
+              : collectionNames[dialog]
+          }
           wide
           onClose={close}
         >
@@ -542,7 +627,7 @@ export default function App() {
             id={labId}
             select={(id) => {
               setLabId(id)
-              const section = isTrick(id) ? 'ski-tricks' : 'technique-lab'
+              const section = collectionFor(id)
               setDialog(section)
               history.replaceState(
                 null,
@@ -551,7 +636,7 @@ export default function App() {
                   location.search +
                   '#' +
                   section +
-                  (isTrick(id) ? '/' + id : ''),
+                  (section === 'technique-lab' ? '' : '/' + id),
               )
             }}
             practice={practice}
@@ -579,7 +664,7 @@ export default function App() {
             units={prefs.units}
             again={() => {
               configure(review.setup)
-              start()
+              start(false, review.setup)
             }}
             close={() => setReview(null)}
           />

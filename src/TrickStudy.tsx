@@ -5,7 +5,7 @@ import { trickReplay } from './trickReplay.ts'
 import { trickPhase } from './air.ts'
 import { riderMass } from './analysis.ts'
 import { radians } from './physics.ts'
-import { tricks, type TrickId } from './tricks.ts'
+import { tricks, isBoardTrick, type TrickId } from './tricks.ts'
 import type { Setup } from './course.ts'
 import type { Prefs } from './storage.ts'
 
@@ -154,7 +154,8 @@ export function TrickStudy({
         rel="noreferrer"
         href={tricks[id].source}
       >
-        Ski Addiction · Movement reference <ExternalLink size={12} />
+        {isBoardTrick(id) ? 'Snowboard Addiction' : 'Ski Addiction'} · Movement
+        reference <ExternalLink size={12} />
       </a>
     </section>
   )

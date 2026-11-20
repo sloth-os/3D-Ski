@@ -30,7 +30,14 @@ import {
   Waves,
   Wind,
 } from 'lucide-react'
-import { isTrick, isSpin, usesPose, tricks, type TrickId } from './tricks.ts'
+import {
+  isTrick,
+  isSpin,
+  usesPose,
+  tricks,
+  requiredSpin,
+  type TrickId,
+} from './tricks.ts'
 import { trickPhase } from './air.ts'
 import { cameras, type CameraMode } from './cameras.ts'
 import { analyse, riderPose, riderMass, type Lens } from './analysis.ts'
@@ -39,6 +46,11 @@ import {
   surfaces,
   techniques,
   equipmentFor,
+  collectionFor,
+  collectionNames,
+  startsSwitch,
+  isSwitchDrill,
+  stanceLabel,
   type Setup,
   type CourseId,
   type SurfaceId,
@@ -291,8 +303,20 @@ export function InstrumentPanel({
               <i style={{ width: a.firstShare * 100 + '%' }} />
             </div>
             <footer>
-              <span>{board ? 'Front' : 'Left'}</span>
-              <span>{board ? 'Rear' : 'Right'}</span>
+              <span>
+                {board
+                  ? frame.air.switch
+                    ? 'Nose · trailing'
+                    : 'Front'
+                  : 'Left'}
+              </span>
+              <span>
+                {board
+                  ? frame.air.switch
+                    ? 'Tail · leading'
+                    : 'Rear'
+                  : 'Right'}
+              </span>
             </footer>
           </div>
           <Toggle label="3D overlays" on={prefs.forces} change={toggle} />
@@ -347,14 +371,23 @@ export function FrameInspector({ f, setup }: { f: Frame; setup: Setup }) {
       <div className="frame-grid">
         {[
           [
-            board ? 'Front knee' : 'Left knee',
+            board
+              ? f.air.switch
+                ? 'Left knee · trailing'
+                : 'Front knee'
+              : 'Left knee',
             Math.round(p.legs[0].angle) + '°',
           ],
           [
-            board ? 'Rear knee' : 'Right knee',
+            board
+              ? f.air.switch
+                ? 'Right knee · leading'
+                : 'Rear knee'
+              : 'Right knee',
             Math.round(p.legs[1].angle) + '°',
           ],
           ['Loaded edge', a.edgeName],
+          ['Riding stance', stanceLabel(board, f.air.switch)],
           [isTrick(setup.technique) ? 'Trick phase' : 'Turn phase', a.phase],
           ['Normal load', Math.round(a.normalN) + ' N'],
           ['Apparent load', a.loadG.toFixed(2) + ' g'],
@@ -363,7 +396,6 @@ export function FrameInspector({ f, setup }: { f: Frame; setup: Setup }) {
                 ['Airtime', f.air.elapsed.toFixed(2) + ' s'],
                 ['Peak lift', f.air.peak.toFixed(2) + ' m'],
                 ['Rotation', Math.round((f.air.spin * 180) / Math.PI) + '°'],
-                ['Stance', f.air.switch ? 'Switch' : 'Forward'],
               ]
             : []),
         ].map(([key, val]) => (
@@ -677,10 +709,41 @@ export function Loadout({
         items={options.map((value) => ({
           value,
           name: techniques[value].name,
-          group: isTrick(value) ? 'Ski tricks' : 'Turns',
+          group: collectionNames[collectionFor(value)],
         }))}
         onChange={(v) => setDraft({ ...draft, technique: v as TechniqueId })}
       />
+      <div className="setting-group">
+        <span className="field-label">Starting stance</span>
+        {isSwitchDrill(draft.technique) ? (
+          <p className="stance-note">
+            {stanceLabel(gear === 'snowboard', true)} · This drill starts
+            switch.
+          </p>
+        ) : (
+          <SchemeTabs<'forward' | 'switch'>
+            label="Starting stance"
+            value={startsSwitch(draft) ? 'switch' : 'forward'}
+            onChange={(stance) => setDraft({ ...draft, stance })}
+            items={[
+              {
+                id: 'forward',
+                name:
+                  gear === 'snowboard'
+                    ? 'Regular · left foot leads'
+                    : 'Forward · tips first',
+              },
+              {
+                id: 'switch',
+                name:
+                  gear === 'snowboard'
+                    ? 'Switch · right foot leads'
+                    : 'Backwards · tails first',
+              },
+            ]}
+          />
+        )}
+      </div>
       <div className="setting-group">
         <span className="field-label">Snow surface</span>
         <SchemeTabs<SurfaceId>
@@ -726,11 +789,14 @@ export function TrickHUD({
       : flight
         ? Math.min(1, a.elapsed / a.duration)
         : 0
-  const action = usesPose(id)
-    ? 'K · Hold pose'
-    : isSpin(id)
-      ? '← / → · Set spin'
-      : ''
+  const spin = requiredSpin(id, a.switch)
+  const spinHint =
+    spin < 0
+      ? '← · Spin left'
+      : spin > 0
+        ? '→ · Spin right'
+        : '← / → · Set spin'
+  const action = usesPose(id) ? 'K · Hold pose' : isSpin(id) ? spinHint : ''
   return (
     <section
       className="trick-hud"
@@ -745,7 +811,13 @@ export function TrickHUD({
       </div>
       <header>
         <strong>{tricks[id].name}</strong>
-        <span>{a.switch ? 'Switch' : 'Forward'}</span>
+        <span>
+          {a.switch
+            ? 'Switch'
+            : equipmentFor(id) === 'snowboard'
+              ? 'Regular'
+              : 'Forward'}
+        </span>
       </header>
       <div
         className="jump-meter"
@@ -770,7 +842,13 @@ export function TrickHUD({
           <>
             <span className="key-hint">{action}</span>
             <span className="touch-hint">
-              {usesPose(id) ? 'Hold Pose' : 'Steer at pop'}
+              {usesPose(id)
+                ? 'Hold Pose'
+                : spin < 0
+                  ? 'Hold ← at pop'
+                  : spin > 0
+                    ? 'Hold → at pop'
+                    : 'Steer at pop'}
             </span>
           </>
         )}
