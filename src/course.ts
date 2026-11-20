@@ -1,4 +1,5 @@
-import { freestyleGuide, isBoardTrick, isTrick, tricks } from './tricks.ts'
+import { safetyLessons, isSafety } from './safety.ts'
+import { freestyleGuide, isBoardTrick, tricks } from './tricks.ts'
 
 export const courses = {
   ridge: {
@@ -307,54 +308,25 @@ export const techniques = {
     source:
       'https://snowboardaddiction.com/blogs/training-education/how-to-ride-switch',
   },
+  ...safetyLessons,
   ...tricks,
 } as const
 export type TechniqueId = keyof typeof techniques
 export type Equipment = 'skis' | 'snowboard'
 export function equipmentFor(id: TechniqueId): Equipment {
-  return id === 'boardCarve' ||
+  return id === 'boardStop' ||
+    id === 'boardFall' ||
+    id === 'boardCarve' ||
     id === 'boardSkid' ||
     id === 'boardSwitch' ||
     isBoardTrick(id)
     ? 'snowboard'
     : 'skis'
 }
-export const collectionNames = {
-  'technique-lab': 'Turn techniques',
-  'ski-tricks': 'Ski tricks',
-  'snowboard-tricks': 'Snowboard tricks',
-  'switch-riding': 'Switch riding',
-} as const
-export type Collection = keyof typeof collectionNames
-export function isCollection(id: string | null): id is Collection {
-  return !!id && Object.hasOwn(collectionNames, id)
-}
 export const isSwitchDrill = (
   id: TechniqueId,
 ): id is 'skiSwitch' | 'boardSwitch' =>
   id === 'skiSwitch' || id === 'boardSwitch'
-export function collectionFor(id: TechniqueId): Collection {
-  if (isSwitchDrill(id)) return 'switch-riding'
-  if (isBoardTrick(id)) return 'snowboard-tricks'
-  return isTrick(id) ? 'ski-tricks' : 'technique-lab'
-}
-export function lessonInCollection(
-  collection: Collection,
-  preferred: TechniqueId,
-): TechniqueId {
-  if (collectionFor(preferred) === collection) return preferred
-  const board = equipmentFor(preferred) === 'snowboard'
-  switch (collection) {
-    case 'ski-tricks':
-      return 'straightAir'
-    case 'snowboard-tricks':
-      return 'boardOllie'
-    case 'switch-riding':
-      return board ? 'boardSwitch' : 'skiSwitch'
-    case 'technique-lab':
-      return board ? 'boardCarve' : 'parallel'
-  }
-}
 export const equipmentName = {
   skis: 'Alpine skis',
   snowboard: 'Snowboard',
@@ -364,9 +336,11 @@ export type Setup = {
   technique: TechniqueId
   surface: SurfaceId
   stance?: 'forward' | 'switch'
+  stopEdge?: 'heel' | 'toe'
 }
 export const startsSwitch = (setup: Setup) =>
-  isSwitchDrill(setup.technique) || setup.stance === 'switch'
+  !isSafety(setup.technique) &&
+  (isSwitchDrill(setup.technique) || setup.stance === 'switch')
 export function stanceLabel(board: boolean, switched: boolean) {
   if (board)
     return switched ? 'Switch · right foot leads' : 'Regular · left foot leads'
@@ -418,6 +392,9 @@ export function isSetup(value: unknown): value is Setup {
     Object.hasOwn(courses, s.course) &&
     Object.hasOwn(techniques, s.technique) &&
     Object.hasOwn(surfaces, s.surface) &&
+    (s.stopEdge === undefined ||
+      s.stopEdge === 'heel' ||
+      s.stopEdge === 'toe') &&
     (s.stance === undefined || s.stance === 'forward' || s.stance === 'switch')
   )
 }

@@ -1,8 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import {
   ArrowDownRight,
-  BookOpen,
-  Orbit,
+  Footprints,
   RotateCcw,
   Check,
   ChevronDown,
@@ -26,13 +25,8 @@ import {
   courses,
   techniques,
   equipmentFor,
-  lessonInCollection,
-  collectionFor,
-  collectionNames,
-  isCollection,
   isSwitchDrill,
   stanceLabel,
-  type Collection,
   equipmentName,
   surfaces,
   type Setup,
@@ -66,6 +60,16 @@ import { Controls, Log, RunDetails, TelemetryHelp } from './Panels.tsx'
 import { Telemetry } from './Telemetry.tsx'
 import { Lab } from './Lab.tsx'
 import { isTrick } from './tricks.ts'
+import {
+  sportNames,
+  sportFor,
+  lessonFor,
+  lessonPath,
+  resolveLesson,
+  type Sport,
+} from './library.ts'
+import { isSafety } from './safety.ts'
+import { SafetyHUD } from './SafetyStudy.tsx'
 import { useOffline } from './offline.ts'
 
 type Dialog =
@@ -73,31 +77,22 @@ type Dialog =
   | 'controls'
   | 'setup'
   | 'analysis'
-  | Collection
+  | 'lab'
   | 'run-log'
   | null
-const lessonInHash = (): TechniqueId | null => {
-  const [section, id] = location.hash.slice(1).split('/')
-  if (!id || !Object.hasOwn(techniques, id)) return null
-  const technique = id as TechniqueId
-  return collectionFor(technique) === section ? technique : null
-}
-const fromHash = (): Dialog => {
-  const section = location.hash.slice(1).split('/')[0]
-  return isCollection(section) || section === 'run-log' ? section : null
+function fromHash(preferred: TechniqueId): Dialog {
+  if (resolveLesson(location.hash, preferred)) return 'lab'
+  return location.hash === '#run-log' ? 'run-log' : null
 }
 export default function App() {
   const [setup, setSetup] = useState<Setup>(initialSetup),
     [prefs, setPrefs] = useState(initialPrefs),
     [runs, setRuns] = useState(initialLog)
-  const [dialog, setDialog] = useState<Dialog>(fromHash),
+  const [dialog, setDialog] = useState<Dialog>(() => fromHash(setup.technique)),
     [review, setReview] = useState<Run | null>(null),
     log = useRef(runs)
-  const [labId, setLabId] = useState<TechniqueId>(() =>
-      lessonInCollection(
-        isCollection(dialog) ? dialog : 'technique-lab',
-        lessonInHash() ?? setup.technique,
-      ),
+  const [labId, setLabId] = useState<TechniqueId>(
+      () => resolveLesson(location.hash, setup.technique) ?? setup.technique,
     ),
     [camera, setCamera] = useState<CameraMode>('chase'),
     [lens, setLens] = useState<Lens>('forces')
@@ -134,10 +129,19 @@ export default function App() {
       history.replaceState(null, '', location.pathname + location.search)
     world.current?.focus({ preventScroll: true })
   }
+  function openLesson(id: TechniqueId) {
+    run.pause()
+    setLabId(id)
+    setDialog('lab')
+    setReview(null)
+    history.replaceState(
+      null,
+      '',
+      location.pathname + location.search + lessonPath(id),
+    )
+  }
   function open(which: Dialog) {
     run.pause()
-    if (isCollection(which))
-      setLabId(lessonInCollection(which, setup.technique))
     if (which === 'analysis')
       setSnapshot({
         frame: { ...run.current.current },
@@ -145,7 +149,7 @@ export default function App() {
       })
     setDialog(which)
     setReview(null)
-    const hash = which === 'run-log' || isCollection(which) ? '#' + which : ''
+    const hash = which === 'run-log' ? '#run-log' : ''
     history.replaceState(null, '', location.pathname + location.search + hash)
   }
   function start(demo = false, initial = setup) {
@@ -162,8 +166,8 @@ export default function App() {
     reset((n) => n + 1)
     close()
   }
-  function practice(id: TechniqueId, demo = false) {
-    const chosen = { ...setup, technique: id }
+  function practice(id: TechniqueId, demo = false, stopEdge = setup.stopEdge) {
+    const chosen = { ...setup, technique: id, stopEdge }
     configure(chosen)
     start(demo, chosen)
   }
@@ -195,12 +199,16 @@ export default function App() {
   useEffect(() => {
     const hash = () => {
         run.pause()
-        const section = fromHash()
-        setDialog(section)
-        if (isCollection(section))
-          setLabId(
-            lessonInCollection(section, lessonInHash() ?? setup.technique),
+        const id = resolveLesson(location.hash, setup.technique)
+        setDialog(fromHash(setup.technique))
+        if (id) {
+          setLabId(id)
+          history.replaceState(
+            null,
+            '',
+            location.pathname + location.search + lessonPath(id),
           )
+        }
         setReview(null)
       },
       fs = () => setFull(!!document.fullscreenElement)
@@ -210,6 +218,13 @@ export default function App() {
         setRuns(log.current)
       }
     }
+    const initial = resolveLesson(location.hash, setup.technique)
+    if (initial && location.hash !== lessonPath(initial))
+      history.replaceState(
+        null,
+        '',
+        location.pathname + location.search + lessonPath(initial),
+      )
     window.addEventListener('hashchange', hash)
     window.addEventListener('storage', storage)
     document.addEventListener('fullscreenchange', fs)
@@ -246,7 +261,20 @@ export default function App() {
       return
     }
     if (e.repeat) return
-    if (e.code === 'KeyV' && run.phase === 'running') {
+    if (
+      e.code === 'KeyE' &&
+      run.phase === 'running' &&
+      isSafety(setup.technique)
+    ) {
+      e.preventDefault()
+      run.checkUphill()
+      return
+    }
+    if (
+      e.code === 'KeyV' &&
+      run.phase === 'running' &&
+      !isSafety(setup.technique)
+    ) {
       e.preventDefault()
       run.pivot()
       return
@@ -333,42 +361,26 @@ export default function App() {
         />
         <div className="game-tools">
           <nav aria-label="Game menu">
-            <a
-              href="#technique-lab"
-              title="Technique lab"
-              aria-label="Technique lab"
-              onClick={(e) => {
-                e.preventDefault()
-                open('technique-lab')
-              }}
-            >
-              <BookOpen size={16} />
-              <span>Technique lab</span>
-            </a>
-            <a
-              href="#ski-tricks"
-              aria-label="Ski tricks"
-              title="Ski tricks"
-              onClick={(e) => {
-                e.preventDefault()
-                open('ski-tricks')
-              }}
-            >
-              <Orbit size={17} />
-              <span>Ski tricks</span>
-            </a>
-            <a
-              href="#snowboard-tricks"
-              title="Snowboard tricks"
-              aria-label="Snowboard tricks"
-              onClick={(e) => {
-                e.preventDefault()
-                open('snowboard-tricks')
-              }}
-            >
-              <Layers3 size={17} />
-              <span>Snowboard tricks</span>
-            </a>
+            {(Object.keys(sportNames) as Sport[]).map((sport) => (
+              <a
+                key={sport}
+                className="sport-link"
+                aria-label={sportNames[sport]}
+                href={'#' + sport}
+                title={sportNames[sport]}
+                onClick={(e) => {
+                  e.preventDefault()
+                  openLesson(lessonFor(sport, setup.technique))
+                }}
+              >
+                {sport === 'skiing' ? (
+                  <Footprints size={16} />
+                ) : (
+                  <Layers3 size={16} />
+                )}
+                <span>{sportNames[sport]}</span>
+              </a>
+            ))}
             <a
               href="#run-log"
               title="Run log"
@@ -431,19 +443,7 @@ export default function App() {
             <ArrowDownRight size={13} />
             {preview ? c.pitch : Math.round(f.pitch)}° pitch
           </span>
-          {preview ? (
-            <a
-              className="stance-chip"
-              href="#switch-riding"
-              onClick={(e) => {
-                e.preventDefault()
-                open('switch-riding')
-              }}
-            >
-              <RotateCcw size={12} />
-              Switch riding
-            </a>
-          ) : (
+          {!preview && !isSafety(setup.technique) && (
             <button
               className="stance-chip"
               data-stance={f.air.switch ? 'switch' : 'forward'}
@@ -487,7 +487,7 @@ export default function App() {
         toggle={() => setPrefs((p) => ({ ...p, forces: !p.forces }))}
         details={() => open('analysis')}
       />
-      {!preview && (
+      {!preview && !isSafety(setup.technique) && (
         <div className={'score-ribbon ' + (liveGate ? 'gate-flash' : '')}>
           <Flag size={13} />
           {liveGate
@@ -513,7 +513,16 @@ export default function App() {
         units={prefs.units}
         details={() => open('analysis')}
       />
-      {isTrick(setup.technique) ? (
+      {isSafety(setup.technique) ? (
+        <SafetyHUD
+          frame={f}
+          setup={setup}
+          units={prefs.units}
+          preview={preview}
+          running={run.phase === 'running'}
+          check={run.checkUphill}
+        />
+      ) : isTrick(setup.technique) ? (
         <TrickHUD frame={f} id={setup.technique} preview={preview} />
       ) : isSwitchDrill(setup.technique) ? (
         <section
@@ -551,7 +560,9 @@ export default function App() {
           </span>
         </div>
       )}
-      <TrailMap run={run} setup={setup} units={prefs.units} />
+      {!isSafety(setup.technique) && (
+        <TrailMap run={run} setup={setup} units={prefs.units} />
+      )}
       <TouchPad run={run} force={prefs.touch} technique={setup.technique} />
       <Dock
         run={run}
@@ -612,33 +623,16 @@ export default function App() {
           </details>
         </Modal>
       )}
-      {isCollection(dialog) && (
+      {dialog === 'lab' && (
         <Modal
-          title={
-            dialog === 'technique-lab'
-              ? 'Technique lab'
-              : collectionNames[dialog]
-          }
+          title={sportNames[sportFor(labId)] + ' training'}
           wide
           onClose={close}
         >
           <Lab
             setup={setup}
             id={labId}
-            select={(id) => {
-              setLabId(id)
-              const section = collectionFor(id)
-              setDialog(section)
-              history.replaceState(
-                null,
-                '',
-                location.pathname +
-                  location.search +
-                  '#' +
-                  section +
-                  (section === 'technique-lab' ? '' : '/' + id),
-              )
-            }}
+            select={openLesson}
             practice={practice}
             units={prefs.units}
           />

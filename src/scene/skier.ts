@@ -1,3 +1,4 @@
+import { guardHand, guardElbow, mixPoint } from '../analysis.ts'
 import * as THREE from 'three'
 import { shoulderLook, boardHeadYaw } from '../air.ts'
 import { equipmentFor, type Setup } from '../course.ts'
@@ -289,14 +290,19 @@ export function skierModel(setup: Setup) {
     upper.position.fromArray(p.base)
     hips.position.fromArray(p.base)
     const yaw =
-      p.yaw +
+      p.torso.yaw +
       (board ? 0 : 0.035 * Math.sin(f.t * 1.7) * Math.min(1, f.speed / 5))
     upper.rotation.order = 'YXZ'
     upper.rotation.set(p.torso.pitch, yaw, p.torso.roll)
     hips.rotation.set(0, p.hipYaw, -p.lean * 0.13)
     head.rotation.set(
-      0.085 + 0.18 * f.tuck,
-      board ? boardHeadYaw(f) : 0.62 * shoulderLook(f) - f.heading * 0.25,
+      0.085 + 0.18 * f.tuck - 0.56 * p.guard,
+      (board
+        ? f.safety
+          ? 0
+          : boardHeadYaw(f)
+        : 0.62 * shoulderLook(f) - f.heading * 0.25) +
+        p.scan * (board && f.boardYaw > 0 ? 0 : 1.15),
       p.lean * 0.13,
     )
     if (sharedBoard) {
@@ -326,16 +332,20 @@ export function skierModel(setup: Setup) {
         (side === f.lastSide ? 1 : 0)
       const swing =
         0.038 * Math.sin(f.t * 2.05 + side * 1.6) * Math.min(1, f.speed / 6)
-      const elbow: Point3 = [
+      let elbow: Point3 = [
         side * (board ? 0.37 : 0.343) - p.lean * 0.047,
         0.218 + 0.036 * f.tuck,
         -0.048 + 0.055 * side * p.lean,
       ]
-      const hand: Point3 = [
+      let hand: Point3 = [
         side * ((board ? 0.55 : 0.399) - 0.11 * f.tuck) - p.lean * 0.043,
         0.112 + 0.13 * f.tuck + side * p.lean * 0.084 - 0.043 * plant,
         board ? -0.126 + swing : -0.258 - 0.135 * plant + swing,
       ]
+      if (p.guard) {
+        hand = mixPoint(hand, guardHand(side), p.guard)
+        elbow = mixPoint(elbow, guardElbow(side), p.guard)
+      }
       if (p.grab?.hand === side) {
         const target = upper.worldToLocal(
           handPoint.fromArray(p.grab.point).applyMatrix4(root.matrixWorld),
@@ -368,6 +378,11 @@ export function skierModel(setup: Setup) {
           0.055 + 0.09 * (1 - plant) + 0.028 * Math.sin(f.t * 2.05 + side),
           h[2] + 0.57 - 0.72 * plant,
         ]
+        if (p.guard) {
+          tip[0] = h[0] + side * 0.32
+          tip[1] = Math.max(0.12, h[1] - 0.18)
+          tip[2] = h[2] + 0.92
+        }
         if (f.air.phase === 'flight') {
           tip[1] = h[1] - 0.44
           tip[2] = h[2] + 0.78

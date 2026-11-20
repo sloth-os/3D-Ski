@@ -1,3 +1,4 @@
+import { isSafety, laneLength } from '../safety.ts'
 import * as THREE from 'three'
 import type { Course, Setup } from '../course.ts'
 import { worldHeight, radians, lineAt, type Gate } from '../physics.ts'
@@ -248,7 +249,18 @@ export function addTerrain(
   snow.receiveShadow = true
   terrain.add(snow)
   addForest(terrain, course, setup)
-  addGates(terrain, course, gates)
+  if (isSafety(setup.technique)) {
+    const tile = new THREE.BoxGeometry(0.51, 0.035, 0.25)
+    const colors = [0x173d43, 0xa6f0d6].map(
+      (color) => new THREE.MeshBasicMaterial({ color }),
+    )
+    for (let i = 0; i < 16; i++) {
+      const stripe = new THREE.Mesh(tile, colors[i % 2])
+      stripe.position.copy(pointAt(course, -3.75 + i / 2, laneLength, 0.07))
+      stripe.rotation.x = -course.pitch * radians
+      terrain.add(stripe)
+    }
+  } else addGates(terrain, course, gates)
   scene.add(terrain)
   return terrain
 }

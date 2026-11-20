@@ -263,6 +263,44 @@ test(
     assert.ok(switchRun.switchRide.distance > 0)
     assert.equal(indy.setup.stance, 'switch')
     assert.equal(indy.freestyle.points, 180)
+    await page.goto(url + '#skiing/skiStop')
+    assert.ok((await page.reload()).fromServiceWorker())
+    await page.locator('.safety-study canvas[data-renderer="canvas"]').waitFor()
+    await page.getByRole('button', { name: 'Practice stopping' }).tap()
+    await pressControl('Brake')
+    await page.locator('.safety-hud[data-phase="rest"]').waitFor()
+    await release()
+    await page.getByRole('button', { name: /Check uphill/ }).tap()
+    await page.waitForFunction(
+      () =>
+        JSON.parse(localStorage.getItem('fallline.runs') || '[]').length === 5,
+    )
+    await page.goto(url + '#snowboarding/boardFall')
+    assert.ok((await page.reload()).fromServiceWorker())
+    await page.getByRole('button', { name: 'Practice fall response' }).tap()
+    await pressControl('Flex legs')
+    await page.locator('.safety-hud[data-phase="rest"]').waitFor()
+    await release()
+    await page.getByRole('button', { name: /Check uphill/ }).tap()
+    await page.waitForFunction(
+      () =>
+        JSON.parse(localStorage.getItem('fallline.runs') || '[]').length === 6,
+    )
+    await page.reload()
+    await page.getByRole('link', { name: 'Run log' }).tap()
+    assert.match(
+      await page.locator('.log-table').innerText(),
+      /Falling on a snowboard/,
+    )
+    const [fall, brake] = await page.evaluate(() =>
+      JSON.parse(localStorage.getItem('fallline.runs')),
+    )
+    assert.ok(
+      fall.finished &&
+        fall.safety.guarded &&
+        brake.finished &&
+        brake.safety.distance > 0,
+    )
     assert.deepEqual(errors, [])
   },
 )

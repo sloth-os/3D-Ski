@@ -1,3 +1,4 @@
+import { sportFor, resolveLesson } from '../src/library.ts'
 import assert from 'node:assert/strict'
 import test from 'node:test'
 import { bodyHeading, shoulderLook } from '../src/air.ts'
@@ -10,12 +11,10 @@ import {
 } from '../src/analysis.ts'
 import { cameraShot, type ViewOptions } from '../src/cameras.ts'
 import {
-  collectionFor,
   courses,
   defaultSetup,
   equipmentFor,
   isSetup,
-  lessonInCollection,
   startsSwitch,
   type Setup,
 } from '../src/course.ts'
@@ -40,12 +39,12 @@ const distance = (p: Point3, q: Point3) =>
   Math.hypot(p[0] - q[0], p[1] - q[1], p[2] - q[2])
 
 test('switch lessons, saved starting stances and incoming equipment choose the right collection', () => {
-  assert.equal(collectionFor('skiSwitch'), 'switch-riding')
-  assert.equal(collectionFor('boardSwitch'), 'switch-riding')
-  assert.equal(collectionFor('boardNoseGrab'), 'snowboard-tricks')
-  assert.equal(collectionFor('ollie'), 'ski-tricks')
-  assert.equal(lessonInCollection('switch-riding', 'boardIndy'), 'boardSwitch')
-  assert.equal(lessonInCollection('switch-riding', 'parallel'), 'skiSwitch')
+  assert.equal(sportFor('skiSwitch'), 'skiing')
+  assert.equal(sportFor('boardSwitch'), 'snowboarding')
+  assert.equal(sportFor('boardNoseGrab'), 'snowboarding')
+  assert.equal(sportFor('ollie'), 'skiing')
+  assert.equal(resolveLesson('#switch-riding', 'boardIndy'), 'boardSwitch')
+  assert.equal(resolveLesson('#switch-riding', 'parallel'), 'skiSwitch')
   assert.equal(equipmentFor('boardIndy'), 'snowboard')
   assert.ok(isSetup(defaultSetup))
   assert.ok(

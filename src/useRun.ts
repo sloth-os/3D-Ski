@@ -42,6 +42,7 @@ export function useRun(
   rateRef.current = rate
   const lastInput = useRef({ ...neutralInput }),
     pivotRequest = useRef(false),
+    checkRequest = useRef(false),
     demoOrigin = useRef(false)
   const [samples, setSamples] = useState<Sample[]>([])
   const current = useRef<Frame>({ ...reference }),
@@ -59,6 +60,7 @@ export function useRun(
     setPhase(next)
     keys.current.clear()
     pivotRequest.current = false
+    checkRequest.current = false
   }, [])
   const start = useCallback(
     (demo = false, initial = setup) => {
@@ -166,12 +168,15 @@ export function useRun(
             ? demonstrationInput(f, setup, gates)
             : pivotRequest.current
               ? { ...input, pivot: true }
-              : input,
+              : checkRequest.current
+                ? { ...input, check: true }
+                : input,
           setup,
           gates,
           1 / 60,
         )
         pivotRequest.current = false
+        checkRequest.current = false
         acc -= 1 / 60
       }
       if (now - lastSample >= 110 || f.done) {
@@ -232,9 +237,17 @@ export function useRun(
     audio,
     gates,
     start,
+    checkUphill: () => {
+      if (
+        state.current === 'running' &&
+        current.current.safety?.phase === 'rest'
+      )
+        checkRequest.current = true
+    },
     pivot: () => {
       if (
         state.current === 'running' &&
+        !current.current.safety &&
         !current.current.pivot &&
         current.current.air.phase === 'ready'
       )

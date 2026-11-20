@@ -1,3 +1,5 @@
+import { isSafety, isFall } from './safety.ts'
+import { lessonsFor, sportFor } from './library.ts'
 import { useMemo, useState } from 'react'
 import {
   ArrowDown,
@@ -46,8 +48,6 @@ import {
   surfaces,
   techniques,
   equipmentFor,
-  collectionFor,
-  collectionNames,
   startsSwitch,
   isSwitchDrill,
   stanceLabel,
@@ -388,7 +388,23 @@ export function FrameInspector({ f, setup }: { f: Frame; setup: Setup }) {
           ],
           ['Loaded edge', a.edgeName],
           ['Riding stance', stanceLabel(board, f.air.switch)],
-          [isTrick(setup.technique) ? 'Trick phase' : 'Turn phase', a.phase],
+          [
+            f.safety
+              ? 'Drill phase'
+              : isTrick(setup.technique)
+                ? 'Trick phase'
+                : 'Turn phase',
+            a.phase,
+          ],
+          ...(isFall(setup.technique)
+            ? [
+                ['Body support on snow', Math.round(a.bodySupportN) + ' N'],
+                [
+                  'Equipment support',
+                  Math.round(a.contacts[0] + a.contacts[1]) + ' N',
+                ],
+              ]
+            : []),
           ['Normal load', Math.round(a.normalN) + ' N'],
           ['Apparent load', a.loadG.toFixed(2) + ' g'],
           ...(isTrick(setup.technique)
@@ -448,22 +464,38 @@ export function FlightInstruments({
         </span>
         <span className="secondary-reading">
           <b>
-            {freestyle
-              ? f.air.elapsed.toFixed(2) + 's'
-              : Math.round(Math.abs(f.edge)) + '°'}
+            {f.safety
+              ? (f.safety.actionAt < 0
+                  ? '0.0'
+                  : (
+                      (f.safety.restAt >= 0 ? f.safety.restAt : f.t) -
+                      f.safety.actionAt
+                    ).toFixed(1)) + 's'
+              : freestyle
+                ? f.air.elapsed.toFixed(2) + 's'
+                : Math.round(Math.abs(f.edge)) + '°'}
           </b>
-          <small>{freestyle ? 'Airtime' : 'Edge angle'}</small>
+          <small>
+            {f.safety ? 'Time in motion' : freestyle ? 'Airtime' : 'Edge angle'}
+          </small>
         </span>
         <span className="secondary-reading">
           <b>
-            {freestyle
-              ? Math.round((f.air.spin * 180) / Math.PI) + '°'
-              : Number.isFinite(f.radius)
-                ? (f.radius * (metric ? 1 : 3.28084)).toFixed(1)
-                : '∞'}
+            {f.safety
+              ? (
+                  (f.safety.actionAt < 0 ? 0 : f.d - f.safety.actionDistance) *
+                  (metric ? 1 : 3.28084)
+                ).toFixed(1)
+              : freestyle
+                ? Math.round((f.air.spin * 180) / Math.PI) + '°'
+                : Number.isFinite(f.radius)
+                  ? (f.radius * (metric ? 1 : 3.28084)).toFixed(1)
+                  : '∞'}
             {!freestyle && <em>{metric ? 'm' : 'ft'}</em>}
           </b>
-          <small>{freestyle ? 'Spin' : 'Turn radius'}</small>
+          <small>
+            {f.safety ? 'Since response' : freestyle ? 'Spin' : 'Turn radius'}
+          </small>
         </span>
       </span>
     </button>
@@ -623,8 +655,8 @@ export function TouchPad({
   return (
     <div className={'ski-pad ' + (force ? 'force' : '')}>
       <div>
-        {button('left', 'Steer left', <ArrowLeft />)}
-        {button('right', 'Steer right', <ArrowRight />)}
+        {!isSafety(technique) && button('left', 'Steer left', <ArrowLeft />)}
+        {!isSafety(technique) && button('right', 'Steer right', <ArrowRight />)}
       </div>
       <div>
         {isTrick(technique) &&
@@ -632,9 +664,14 @@ export function TouchPad({
         {isTrick(technique) &&
           usesPose(technique) &&
           button('pose', 'Hold the trick pose', <small>Pose</small>)}
-        {button('tuck', 'Tuck', <ArrowUp />)}
-        {button('flex', 'Flex legs', <ChevronsDown />)}
-        {button('brake', 'Brake', <small>Brake</small>)}
+        {!isSafety(technique) && button('tuck', 'Tuck', <ArrowUp />)}
+        {(!isSafety(technique) || isFall(technique)) &&
+          button(
+            'flex',
+            'Flex legs',
+            isFall(technique) ? <small>Flex</small> : <ChevronsDown />,
+          )}
+        {!isFall(technique) && button('brake', 'Brake', <small>Brake</small>)}
       </div>
     </div>
   )
@@ -654,9 +691,7 @@ export function Loadout({
 }) {
   const [draft, setDraft] = useState<Setup>({ ...setup }),
     gear = equipmentFor(draft.technique)
-  const options = (Object.keys(techniques) as TechniqueId[]).filter(
-    (k) => equipmentFor(k) === gear,
-  )
+  const options = lessonsFor(sportFor(draft.technique))
   return (
     <div className="loadout">
       <div className="field-label">Terrain</div>
@@ -709,13 +744,19 @@ export function Loadout({
         items={options.map((value) => ({
           value,
           name: techniques[value].name,
-          group: collectionNames[collectionFor(value)],
         }))}
         onChange={(v) => setDraft({ ...draft, technique: v as TechniqueId })}
       />
       <div className="setting-group">
         <span className="field-label">Starting stance</span>
-        {isSwitchDrill(draft.technique) ? (
+        {isSafety(draft.technique) ? (
+          <p className="stance-note">
+            {gear === 'snowboard'
+              ? 'Regular · left foot leads'
+              : 'Forward · tips first'}{' '}
+            for this drill.
+          </p>
+        ) : isSwitchDrill(draft.technique) ? (
           <p className="stance-note">
             {stanceLabel(gear === 'snowboard', true)} · This drill starts
             switch.
@@ -744,6 +785,21 @@ export function Loadout({
           />
         )}
       </div>
+      {draft.technique === 'boardStop' && (
+        <SelectField
+          id="setup-stop-edge"
+          label="Uphill edge"
+          value={draft.stopEdge ?? 'heel'}
+          icon={<Layers3 size={16} />}
+          items={[
+            { value: 'heel', name: 'Heel edge' },
+            { value: 'toe', name: 'Toe edge' },
+          ]}
+          onChange={(v) =>
+            setDraft({ ...draft, stopEdge: v as 'heel' | 'toe' })
+          }
+        />
+      )}
       <div className="setting-group">
         <span className="field-label">Snow surface</span>
         <SchemeTabs<SurfaceId>

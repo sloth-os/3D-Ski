@@ -22,12 +22,23 @@ import {
   type AirState,
 } from './air.ts'
 import { isTrick } from './tricks.ts'
+import {
+  isSafety,
+  isFall,
+  initialSafety,
+  safetyStartSpeed,
+  safetyReferenceInput,
+  stepSafety,
+  edgeSide,
+  type SafetyState,
+} from './safety.ts'
 const approach = (current: number, target: number, rate: number, dt: number) =>
   current + (target - current) * (1 - Math.exp(-rate * dt))
 
 export type Input = {
   jump?: boolean
   pose?: boolean
+  check?: boolean
   pivot?: boolean
   steer: number
   tuck: boolean
@@ -48,6 +59,7 @@ export type Frame = {
   speed: number
   heading: number
   forceHeading: number
+  safety: SafetyState | null
   air: AirState
   pivot: { progress: number; direction: number } | null
   pivotHeld: boolean
@@ -88,9 +100,10 @@ export const emptyFrame = (setup: Setup = defaultSetup): Frame => ({
   x: 0,
   d: 0,
   t: 0,
-  speed: 0,
+  speed: isSafety(setup.technique) ? safetyStartSpeed(setup.technique) : 0,
   heading: 0,
   forceHeading: 0,
+  safety: isSafety(setup.technique) ? initialSafety() : null,
   air: initialAir(startsSwitch(setup)),
   pivot: null,
   pivotHeld: false,
@@ -113,13 +126,18 @@ export const emptyFrame = (setup: Setup = defaultSetup): Frame => ({
   frictionAccel: 0,
   dragAccel: 0,
   grip: 0.96,
-  boardYaw: 0,
+  boardYaw:
+    setup.technique === 'boardStop'
+      ? (edgeSide(setup) * Math.PI) / 2
+      : setup.technique === 'boardFall'
+        ? -Math.PI / 2
+        : 0,
   gatesSeen: 0,
   gatesHit: 0,
   turns: 0,
   points: 0,
   quality: 0,
-  maxSpeed: 0,
+  maxSpeed: isSafety(setup.technique) ? safetyStartSpeed(setup.technique) : 0,
   lastGateHit: false,
   lastGateTime: -5,
   lastSide: 0,
@@ -174,9 +192,15 @@ export function step(
   const pitch = pitchAt(course, f.d, f.x)
   if (f.t === 0 && startsSwitch(setup) && !f.air.switch)
     f.air = initialAir(true)
+  if (f.t === 0 && isSafety(setup.technique) && !f.safety)
+    Object.assign(f, emptyFrame(setup))
   f.t += dt
   f.pitch = pitch / radians
   f.forceHeading = f.heading
+  if (isSafety(setup.technique)) {
+    stepSafety(f, input, setup, surface.friction, dt)
+    return
+  }
   const trick = isTrick(setup.technique),
     beforeX = f.x,
     beforeD = f.d
@@ -361,6 +385,7 @@ export type Sample = {
   radius: number
 }
 export function frontBindingShare(f: Frame, setup?: Setup) {
+  if (setup?.technique === 'boardStop') return 0.5
   const lead = clamp(
     0.53 + 0.065 * f.tuck - 0.13 * f.brake + 0.038 * Math.tanh(f.edgeRate / 38),
     0.32,
@@ -411,7 +436,24 @@ export function summarize(frame: Frame, setup: Setup) {
     quality: isTrick(setup.technique)
       ? Math.round((100 * frame.air.landed) / Math.max(1, frame.air.attempts))
       : frame.quality,
-    finished: frame.done,
+    finished: frame.safety ? frame.safety.phase === 'checked' : frame.done,
+    ...(frame.safety
+      ? {
+          safety: {
+            phase: frame.safety.phase,
+            guarded: frame.safety.guarded,
+            speed: frame.safety.entrySpeed * 3.6,
+            distance:
+              frame.safety.actionAt < 0
+                ? 0
+                : Math.max(0, frame.d - frame.safety.actionDistance),
+            seconds:
+              frame.safety.restAt < 0
+                ? 0
+                : frame.safety.restAt - frame.safety.actionAt,
+          },
+        }
+      : {}),
     ...(frame.switchDistance > 0 || startsSwitch(setup)
       ? {
           switchRide: {
@@ -441,6 +483,7 @@ export function demonstrationInput(
   setup: Setup,
   gates: Gate[],
 ): Input {
+  if (isSafety(setup.technique)) return safetyReferenceInput(f, setup.technique)
   const anticipation = 2.6 + f.speed * 0.53
   const targetD = f.d + anticipation
   const center = lineAt(gates, targetD)
@@ -486,6 +529,11 @@ export function referenceFrame(setup: Setup): Frame {
     gates = buildGates(courses[setup.course])
   for (let i = 0; i < 646; i++) {
     step(frame, demonstrationInput(frame, setup, gates), setup, gates, 1 / 60)
+    if (
+      frame.safety &&
+      (isFall(setup.technique) ? frame.safety.fall >= 0.8 : frame.brake >= 0.82)
+    )
+      break
     if (
       isTrick(setup.technique) &&
       frame.air.phase === 'flight' &&

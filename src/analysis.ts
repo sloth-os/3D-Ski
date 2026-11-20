@@ -1,4 +1,13 @@
 import {
+  contactOnBody,
+  bodyGuard,
+  isSafety,
+  safetyPhases,
+  wedgeYaw,
+  uphillLook,
+  isFall,
+} from './safety.ts'
+import {
   isTrick,
   tricks,
   usesPose,
@@ -91,6 +100,11 @@ export function transformPoint(
   return add3(transform.origin, [rx * cy + pz * sy, py, -rx * sy + pz * cy])
 }
 export const deckPoint = transformPoint
+export function mixPoint(a: Point3, b: Point3, w: number): Point3 {
+  return add3(scale3(a, 1 - w), scale3(b, w))
+}
+export const guardHand = (side: number): Point3 => [side * 0.17, 0.36, -0.29]
+export const guardElbow = (side: number): Point3 => [side * 0.29, 0.19, -0.13]
 export function riderPose(f: Frame, setup: Setup) {
   const board = equipmentFor(setup.technique) === 'snowboard',
     facing = Math.cos(bodyHeading(f)),
@@ -104,7 +118,10 @@ export function riderPose(f: Frame, setup: Setup) {
     0.1,
     1,
   )
-  const roll = f.edge * radians * facing
+  const fall = f.safety?.fall ?? 0,
+    guard = bodyGuard(f.safety),
+    wedgeStop = setup.technique === 'skiStop'
+  const roll = wedgeStop ? 0 : f.edge * radians * facing
   const lateral = Math.sin(lean) * 0.56 + Math.sin(roll) * 0.085
   const id = setup.technique,
     a = f.air,
@@ -159,6 +176,10 @@ export function riderPose(f: Frame, setup: Setup) {
       (board ? 0 : 0.065) * grabAmount,
     0.039 + flex * 0.11 - f.tuck * 0.07 + 0.18 * press - 0.18 * noseReach,
   ]
+  if (fall) {
+    const down: Point3 = board ? [-0.5, 0.19, 0.1] : [-0.49, 0.19, 0.14]
+    for (let i = 0; i < 3; i++) base[i] += (down[i] - base[i]) * fall
+  }
   const torso: RigidTransform = {
     origin: base,
     yaw,
@@ -173,10 +194,15 @@ export function riderPose(f: Frame, setup: Setup) {
         ? grip.hand * (id === 'boardNoseGrab' ? 0.55 : 0.3) * grabAmount
         : 0),
   }
+  if (fall) {
+    torso.pitch += ((board ? 0.84 : -0.15) - torso.pitch) * fall
+    torso.roll += ((board ? 0.25 : 1.06) - torso.roll) * fall
+  }
+  torso.yaw += uphillLook(f) * (board ? (f.boardYaw > 0 ? 0.12 : 0.88) : 0.7)
   const forward: Point3 = [-Math.sin(hipYaw), 0, -Math.cos(hipYaw)]
   const legs = ([-1, 1] as const).map((side) => {
     const half = board ? 0.148 : 0.064,
-      baseX = board ? 0 : side * (0.196 + 0.065 * f.brake)
+      baseX = board ? 0 : side * (0.196 + (wedgeStop ? 0.14 : 0.065) * f.brake)
     const z = board ? side * 0.28 : side * Math.sin(lean) * 0.14
     const stagger =
       board || flying ? 0 : (side * 0.12 * f.lookSide * (1 - facing)) / 2
@@ -185,7 +211,7 @@ export function riderPose(f: Frame, setup: Setup) {
     const origin: Point3 = [
       baseX * Math.cos(twist),
       0.031 +
-        half * Math.abs(Math.sin(roll)) +
+        half * Math.abs(Math.sin(wedgeStop ? 0.24 * f.brake : roll)) +
         0.85 * Math.abs(Math.sin(skiPitch)) +
         lift +
         (side > 0 ? 0.18 : 0.018) * grabAmount +
@@ -197,16 +223,20 @@ export function riderPose(f: Frame, setup: Setup) {
       : {
           origin,
           pitch: skiPitch,
-          yaw:
-            twist +
-            side *
-              (((id === 'wedge' ? 0.18 : 0.008) + f.brake * 0.33) * facing +
-                0.53 * crossed),
-          roll: -roll,
+          yaw: wedgeStop
+            ? side * wedgeYaw(f.brake)
+            : twist +
+              side *
+                (((id === 'wedge' ? 0.18 : 0.008) + f.brake * 0.33) * facing +
+                  0.53 * crossed),
+          roll: wedgeStop ? side * 0.24 * f.brake : -roll,
         }
     const ankle = deckPoint(deck, [0, 0.148, board ? z : 0])
     const contact: Point3 = [
-      baseX + Math.sign(roll) * half * Math.cos(roll),
+      baseX +
+        (wedgeStop ? -side : Math.sign(roll)) *
+          half *
+          Math.cos(wedgeStop ? 0.24 * f.brake : roll),
       0.022 + lift,
       board
         ? z * (1 - 0.8 * Math.abs(press)) + 0.65 * press
@@ -276,6 +306,9 @@ export function riderPose(f: Frame, setup: Setup) {
   return {
     base,
     torso,
+    guard,
+    scan: uphillLook(f),
+    bodyContact: [base[0], 0.027, base[2]] as Point3,
     yaw,
     hipYaw,
     forward,
@@ -332,6 +365,8 @@ export function analyse(f: Frame, setup: Setup) {
   const contactFraction = flying
     ? 0
     : 1 - 0.75 * Math.abs(foreAftPress(f, setup.technique))
+  const bodyShare = contactOnBody(f.safety),
+    equipmentN = normalN * (1 - bodyShare)
   const area =
     contactFraction *
     (board ? 0.34 : 0.245) *
@@ -352,37 +387,52 @@ export function analyse(f: Frame, setup: Setup) {
     dragN: magnitude(drag),
     reactionN: magnitude(reaction),
     loadG: magnitude(reaction) / (riderMass * gravity),
-    contacts: [normalN * firstShare, normalN * (1 - firstShare)],
+    bodyShare,
+    bodySupportN: normalN * bodyShare,
+    contacts: [equipmentN * firstShare, equipmentN * (1 - firstShare)],
     firstShare,
-    pressureKpa: area ? normalN / (area * 1000) : 0,
+    pressureKpa: area ? equipmentN / (area * 1000) : 0,
     area,
     contactFraction,
-    edgeName: flying
-      ? 'Airborne'
-      : board
-        ? Math.abs(f.edge) < 3
-          ? 'Flat base'
-          : f.edge * Math.cos(bodyHeading(f)) > 0
-            ? 'Toe edge'
-            : 'Heel edge'
-        : Math.abs(f.edge) < 3
-          ? 'Flat bases'
-          : f.edge * Math.cos(bodyHeading(f)) > 0
-            ? 'Left ski'
-            : 'Right ski',
-    phase: isTrick(setup.technique)
-      ? trickPhase(f)
-      : Math.abs(f.edge) < 6
-        ? 'Transition'
-        : Math.sign(f.edge) * f.edgeRate > 5
-          ? 'Engagement'
-          : Math.sign(f.edge) * f.edgeRate < -5
-            ? 'Release'
-            : 'Shaping',
+    edgeName:
+      setup.technique === 'skiStop' && f.brake > 0.08
+        ? 'Inside edges'
+        : flying
+          ? 'Airborne'
+          : board
+            ? Math.abs(f.edge) < 3
+              ? 'Flat base'
+              : f.edge * Math.cos(bodyHeading(f)) > 0
+                ? 'Toe edge'
+                : 'Heel edge'
+            : Math.abs(f.edge) < 3
+              ? 'Flat bases'
+              : f.edge * Math.cos(bodyHeading(f)) > 0
+                ? 'Left ski'
+                : 'Right ski',
+    phase: f.safety
+      ? safetyPhases[f.safety.phase]
+      : isTrick(setup.technique)
+        ? trickPhase(f)
+        : Math.abs(f.edge) < 6
+          ? 'Transition'
+          : Math.sign(f.edge) * f.edgeRate > 5
+            ? 'Engagement'
+            : Math.sign(f.edge) * f.edgeRate < -5
+              ? 'Release'
+              : 'Shaping',
   }
 }
 export type ForceState = ReturnType<typeof analyse>
 export type RiderPose = ReturnType<typeof riderPose>
+export function studyPoint(f: Frame, setup: Setup, p: RiderPose) {
+  if (!f.safety) return p.leadingEnd
+  if (isFall(setup.technique))
+    return contactOnBody(f.safety) > 0.2
+      ? p.bodyContact
+      : p.legs[p.outside].knee
+  return p.legs[1].contact
+}
 
 // A constrained ideal-edge study. The selected angle and speed describe the peak of a linked turn.
 export function idealTurn(
@@ -424,6 +474,7 @@ export function idealTurn(
 export function coachingCue(f: Frame, setup: Setup) {
   const board = equipmentFor(setup.technique) === 'snowboard',
     drill = techniques[setup.technique]
+  if (isSafety(setup.technique)) return techniques[setup.technique].cue
   if (f.pivot)
     return 'Keep the base flat while the equipment pivots across the direction of travel.'
   if (isTrick(setup.technique)) {

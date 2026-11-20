@@ -1,3 +1,4 @@
+import { isSafety, safetyPhases } from './safety.ts'
 import { isSetup, type Setup, defaultSetup } from './course.ts'
 import type { Run } from './physics.ts'
 
@@ -44,6 +45,14 @@ export function initialLog(): Run[] {
         (r): r is Run =>
           !!r &&
           isSetup(r.setup) &&
+          (r.safety === undefined ||
+            (isSafety(r.setup.technique) &&
+              r.safety !== null &&
+              Object.hasOwn(safetyPhases, r.safety.phase) &&
+              typeof r.safety.guarded === 'boolean' &&
+              ['speed', 'distance', 'seconds'].every(
+                (k) => Number.isFinite(r.safety[k]) && r.safety[k] >= 0,
+              ))) &&
           (r.switchRide === undefined ||
             (r.switchRide !== null &&
               ['distance', 'turns', 'gates'].every(

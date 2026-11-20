@@ -1,6 +1,6 @@
 # Fallline Alpine Simulator
 
-Fallline is a full-screen ski and snowboard game for the browser. Ride gates in either stance, practice 17 freestyle tricks, or freeze the rider in midair to inspect a grab, a joint angle, or a force. The game runs offline after its first successful visit. [Play Fallline](https://sloth-os.github.io/3D-Ski/) · [Ski tricks](https://sloth-os.github.io/3D-Ski/#ski-tricks) · [Snowboard tricks](https://sloth-os.github.io/3D-Ski/#snowboard-tricks) · [Switch riding](https://sloth-os.github.io/3D-Ski/#switch-riding)
+Fallline is a full-screen ski and snowboard game for the browser. Choose **Skiing** or **Snowboarding**, then use the lesson picker for turns, tricks, switch riding, stopping, or falls. Drag to orbit the 3D rider, scrub an example, or take control on the mountain. The production app runs offline after its first successful visit. [Play Fallline](https://sloth-os.github.io/3D-Ski/) · [Skiing](https://sloth-os.github.io/3D-Ski/#skiing) · [Snowboarding](https://sloth-os.github.io/3D-Ski/#snowboarding)
 
 ## Playing
 
@@ -11,11 +11,12 @@ Open **Run setup** to choose terrain, equipment, technique, and snow. **Start ru
 | ← / → or A / D  | Steer, progressively engage the edges, and release to flatten the base |
 | ↑ or W          | Tuck to reduce air drag                                                |
 | ↓ or S          | Flex the legs over terrain changes                                     |
-| Space           | Brake by skidding                                                      |
+| Space           | Brake with the movement for the current lesson                         |
+| E               | Check uphill after coming to rest in a stopping or falling drill       |
 | Hold J, release | Charge a pop and jump in a freestyle drill                             |
 | ← or → at pop   | Set the direction of a 180 or 360                                      |
 | Hold K, release | Show a shifty or grab in flight, then open for touchdown               |
-| V               | Make a surface 180 to change between forward and switch                |
+| V               | Pivot between forward and switch in open practice or a switch drill    |
 | Enter           | Start or resume                                                        |
 | P or Esc        | Pause or resume                                                        |
 | C or 1–5        | Cycle cameras or select chase, helmet, trackside, edge, or aerial      |
@@ -36,9 +37,22 @@ On a touchscreen, hold **Pop** and lift your finger to jump. Keep a second finge
 
 The three fictional Swiss courses have distinct gate spacing, elevation, forest density, and undulations. Groomed, powder, and icy snow change friction, effective grip, contact area, and spray. Choose parallel, carved, wedge, or short turns on skis. On a snowboard, choose edge-to-edge carves or skidded turns with fixed bindings, toe and heel edges, and sideslip. Use **Run setup → Starting stance** to begin an open practice forward or switch.
 
+### Stopping and falling
+
+Each sport has two short exercises in an 18 m practice lane. Use **Space** or **Brake** to slow down, **↓ / S** or **Flex** to lower the body in the fall response, and **E** or **Check uphill** once stationary. Each drill has an orbitable, half-speed replay with phase controls.
+
+| Lesson                                                                              | What to practice                                                                                                                      |
+| ----------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------- |
+| [Wedge stop](https://sloth-os.github.io/3D-Ski/#skiing/skiStop)                     | Keep the tips apart and spread the tails progressively. Compare your approach speed with the distance needed to stop.                 |
+| [Snowboard edge stop](https://sloth-os.github.io/3D-Ski/#snowboarding/boardStop)    | Begin across the slope in a sideslip. Choose the heel or toe edge and increase uphill edge angle to slow both feet together.          |
+| [Falling on skis](https://sloth-os.github.io/3D-Ski/#skiing/skiFall)                | Follow a low-speed sideways loss of balance. Keep knees flexed, hands forward, and wait until sliding ends before assessing recovery. |
+| [Falling on a snowboard](https://sloth-os.github.io/3D-Ski/#snowboarding/boardFall) | Follow a low-speed heelside fall. Lower the hips, keep the arms in front, and observe how support moves from the board to the body.   |
+
+The run log measures speed, distance, and time to rest from brake onset or the first body contact with snow. It also records the uphill check. Falls also record whether the flex cue was held at contact. The ground forces are estimates in a sliding model. On snow, practice with a qualified instructor on gentle terrain. After a fall, first check for injury and signal for patrol if hurt or unsure. [Vermont Ski Safety](https://vermontskisafety.com/research/tips/) · [Nemours KidsHealth](https://kidshealth.org/en/teens/safety-snowboarding.html) · [SnowProfessor](https://snowprofessor.com/step-6-get-up-start-stop) · [NSAA Responsibility Code](https://skisafety.us/your-responsibility-code)
+
 ### Practicing ski tricks
 
-Open **Ski tricks**, pick a move, and use the replay to study approach, takeoff, maneuver, and landing. Drag to orbit the rider, scrub the timeline, or select a phase. The dotted arc follows the simulated jump. Switch between body joints, force vectors, and snow contact before choosing **Practice this trick** or **Watch demo**.
+Open **Skiing**, pick a move from **Lesson**, and use the replay to study approach, takeoff, maneuver, and landing. Drag to orbit the rider, scrub the timeline, or select a phase. The dotted arc follows the simulated jump. Switch between body joints, force vectors, and snow contact before choosing **Practice this trick** or **Watch demo**.
 
 | Trick        | What to look for in the replay                                                      | Clean landing |
 | ------------ | ----------------------------------------------------------------------------------- | ------------: |
@@ -55,7 +69,7 @@ A full pop takes about half a second to charge. Grabs and shifties score when th
 
 ### Practicing snowboard tricks
 
-Select a trick and scrub between takeoff, the apex, and landing. In **Body**, follow the highlighted arm from shoulder to elbow to the glove’s contact point on the deck. In **Contact**, watch pressure move between the bindings during preload, drop to zero in flight, and rise on touchdown. Both feet stay attached to the same deck as it pitches and turns. [Snowboard trick studio](https://sloth-os.github.io/3D-Ski/#snowboard-tricks)
+Select a trick and scrub between takeoff, the apex, and landing. In **Body**, follow the highlighted arm from shoulder to elbow to the glove’s contact point on the deck. In **Contact**, watch pressure move between the bindings during preload, drop to zero in flight, and rise on touchdown. Both feet stay attached to the same deck as it pitches and turns. [Snowboard trick studio](https://sloth-os.github.io/3D-Ski/#snowboarding/boardIndy)
 
 | Trick            | Movement to study                                                        | Clean landing |
 | ---------------- | ------------------------------------------------------------------------ | ------------: |
@@ -73,7 +87,7 @@ With the simulator’s regular setup, left foot leads and a frontside spin start
 
 ### Skiing backwards and riding switch
 
-**Skiing backwards** starts with the tails leading. The skier changes the foot stagger and looks over the outside shoulder as the turn changes direction. **Switch snowboarding** starts with the right foot leading. A right turn engages the heel edge in switch and the toe edge in regular. In the turn study, hold the same steering angle and change stance to compare the loaded ski or edge. The turquoise arrow tracks travel as the equipment turns. [Skiing backwards](https://sloth-os.github.io/3D-Ski/#switch-riding/skiSwitch) · [Switch snowboarding](https://sloth-os.github.io/3D-Ski/#switch-riding/boardSwitch)
+**Skiing backwards** starts with the tails leading. The skier changes the foot stagger and looks over the outside shoulder as the turn changes direction. **Switch snowboarding** starts with the right foot leading. A right turn engages the heel edge in switch and the toe edge in regular. In the turn study, hold the same steering angle and change stance to compare the loaded ski or edge. The turquoise arrow tracks travel as the equipment turns. [Skiing backwards](https://sloth-os.github.io/3D-Ski/#skiing/skiSwitch) · [Switch snowboarding](https://sloth-os.github.io/3D-Ski/#snowboarding/boardSwitch)
 
 Press **V** or tap the stance to pivot once on the snow. The base flattens as the equipment turns through 180° and the rider continues downhill. The switch practice display tracks downhill distance and linked turns. The run log also records gates cleared while riding switch. Airborne tricks have their own score. [Ski Addiction on switch skiing](https://skiaddiction.com/blogs/training-education/how-to-ski-switch) · [Snowboard Addiction on riding switch](https://snowboardaddiction.com/blogs/training-education/how-to-ride-switch)
 
@@ -82,7 +96,7 @@ Press **V** or tap the stance to pivot once on the snow. The base flattens as th
 - **Forces** draws gravity and air drag at the center of mass and snow reaction at the weighted contact point. The arrows share a force scale. Select an annotation or an instrument to capture that frame. The inspector resolves the vectors in newtons and shows the net force.
 - **Body** attaches joint markers to both hips, knees, and ankles. The highlighted center of mass moves with inclination, flexion, and tuck. The displayed knee angles are measured from the same two-link legs that drive the animation.
 - **Contact** shows two ski contact patches or two loading regions on one snowboard edge. Compare normal load, sliding resistance, estimated contact pressure, and the left/right ski or front/rear binding split.
-- **Technique lab** provides lesson phases, a drill, and a draggable 3D rider. Change speed and peak edge angle, link successive turns, or inspect the bindings in close-up. The terrain profile samples course elevation, local pitch, and the downhill component of gravity.
+- **Skiing** and **Snowboarding** provide lesson phases, a drill, and a draggable 3D rider. Change speed and peak edge angle, link successive turns, or inspect the bindings in close-up. The terrain profile samples course elevation, local pitch, and the downhill component of gravity.
 
 ## Physics and research
 
@@ -121,7 +135,7 @@ After the production app shows **Offline ready**, its service worker has cached 
 
 The GitHub Actions workflow runs on pushes to the default branch and manual dispatch. It runs the physics regressions, builds the production app, exercises the WebGL cockpit and disconnected PWA with Chromium, and deploys the resulting artifact. Repository Pages settings use **GitHub Actions** as the deployment source. Relative asset URLs and the scoped manifest and service worker support repository subpaths. [Publishing workflow](.github/workflows/pages.yml)
 
-The regression suite covers all 225 course, surface, and technique combinations and 306 freestyle replays across both starting stances. It checks force balance, grabs, binding attachment, toe and heel edges, surface pivots, switch landings, and scoring. To repeat the browser checks locally, first build the site and then run the following. An existing Chromium executable can be selected with `FALLLINE_CHROMIUM`.
+The regression suite covers all 261 course, surface, and lesson combinations, including 45 stopping and falling replays with both snowboard stopping edges, and 306 freestyle replays across both starting stances. It checks force balance, grabs, binding attachment, toe and heel edges, surface pivots, switch landings, and scoring. To repeat the browser checks locally, first build the site and then run the following. An existing Chromium executable can be selected with `FALLLINE_CHROMIUM`.
 
 ```sh
 npx playwright-core install --only-shell chromium

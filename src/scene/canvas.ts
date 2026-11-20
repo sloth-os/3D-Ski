@@ -1,3 +1,4 @@
+import { isSafety, laneLength } from '../safety.ts'
 import { bodyHeading, boardHeadYaw, shoulderLook } from '../air.ts'
 import { courses, equipmentFor, isSwitchDrill, type Setup } from '../course.ts'
 import {
@@ -7,7 +8,11 @@ import {
   type ScreenPoint,
 } from '../cameras.ts'
 import {
+  studyPoint,
   analyse,
+  guardHand,
+  guardElbow,
+  mixPoint,
   deckPoint,
   transformPoint,
   riderPose,
@@ -70,7 +75,10 @@ export function canvasMountain(
         canvas.height = h
       }
       ctx.clearRect(0, 0, w, h)
-      const plate = isTrailhead(opt) && setup.course === 'ridge'
+      const plate =
+        !isSafety(setup.technique) &&
+        isTrailhead(opt) &&
+        setup.course === 'ridge'
       container.dataset.plate = plate ? 'on' : 'off'
       const shot = cameraShot(f, course, opt, board),
         pos = at(f.x, f.d),
@@ -237,29 +245,38 @@ export function canvasMountain(
             })
           }
         }
-        gates.forEach((g, i) => {
-          for (const side of [-1, 1]) {
-            const x = g.x + side * g.width,
-              base = at(x, g.d),
-              v = project(base)
-            if (v.depth < 1) continue
-            objects.push({
-              depth: v.depth,
-              draw: () => {
-                const col = i % 2 ? '#3774ac' : '#cf6249'
-                stroke(base, at(x, g.d, 2), col, 0.064)
-                stroke(
-                  at(x, g.d, 1.63),
-                  at(x + side * 1.01, g.d, 1.63),
-                  col,
-                  0.4,
-                )
-              },
-            })
-          }
-        })
+        if (!isSafety(setup.technique))
+          gates.forEach((g, i) => {
+            for (const side of [-1, 1]) {
+              const x = g.x + side * g.width,
+                base = at(x, g.d),
+                v = project(base)
+              if (v.depth < 1) continue
+              objects.push({
+                depth: v.depth,
+                draw: () => {
+                  const col = i % 2 ? '#3774ac' : '#cf6249'
+                  stroke(base, at(x, g.d, 2), col, 0.064)
+                  stroke(
+                    at(x, g.d, 1.63),
+                    at(x + side * 1.01, g.d, 1.63),
+                    col,
+                    0.4,
+                  )
+                },
+              })
+            }
+          })
         objects.sort((a, b) => b.depth - a.depth).forEach((o) => o.draw())
-        if (opt.line) {
+        if (isSafety(setup.technique)) {
+          for (let i = -8; i < 8; i++)
+            stroke(
+              at(i / 2, laneLength, 0.065),
+              at((i + 1) / 2, laneLength, 0.065),
+              i % 2 ? '#173d43' : '#a6f0d6',
+              0.24,
+            )
+        } else if (opt.line) {
           for (
             let d = Math.max(0, f.d - 5);
             d < Math.min(course.length, f.d + 135);
@@ -393,6 +410,10 @@ export function canvasMountain(
             -0.21 + s * p.shifty * 0.16,
           ])
           let elbow = torso([s * 0.32, 0.22, -0.015])
+          if (p.guard) {
+            hand = mixPoint(hand, torso(guardHand(s)), p.guard)
+            elbow = mixPoint(elbow, torso(guardElbow(s)), p.guard)
+          }
           if (p.grab?.hand === s) {
             hand = add3(
               scale3(hand, 1 - p.grab.weight),
@@ -412,13 +433,17 @@ export function canvasMountain(
         ball(torso([0, 0.58, -0.06]), 0.125, '#253238')
         const helmet = torso([0, 0.683, -0.082])
         ball(helmet, 0.151, '#26343d')
-        const gaze = board
-          ? boardHeadYaw(f)
-          : 0.62 * shoulderLook(f) - 0.25 * f.heading
+        const gaze =
+          (board
+            ? f.safety
+              ? 0
+              : boardHeadYaw(f)
+            : 0.62 * shoulderLook(f) - 0.25 * f.heading) +
+          p.scan * (board && f.boardYaw > 0 ? 0 : 1.15)
         const goggles = (side: number) =>
           torso([
             side * 0.105 * Math.cos(gaze) - 0.13 * Math.sin(gaze),
-            0.687,
+            0.687 - 0.065 * p.guard,
             -0.082 - side * 0.105 * Math.sin(gaze) - 0.13 * Math.cos(gaze),
           ])
         if (dot(sub(goggles(0), helmet), sub(eye, helmet)) > 0)
@@ -431,7 +456,11 @@ export function canvasMountain(
           scale3(p.legs[0].contact, a.firstShare),
           scale3(p.legs[1].contact, 1 - a.firstShare),
         )
-        upper = arrow(local(weighted), a.reaction, lensColors.support)
+        upper = arrow(
+          local(mixPoint(weighted, p.bodyContact, a.bodyShare)),
+          a.reaction,
+          lensColors.support,
+        )
         arrow(com, a.weight, lensColors.gravity)
         const tip = arrow(com, a.drag, lensColors.drag)
         if (!a.normalN) upper = tip
@@ -463,6 +492,12 @@ export function canvasMountain(
         }
       }
       if (opt.lens === 'contact') {
+        if (opt.forces && a.bodySupportN > 0)
+          arrow(
+            local(p.bodyContact),
+            scale3(a.normal, a.bodySupportN),
+            lensColors.gravity,
+          )
         upper = local(p.legs[0].contact)
         lower = local(p.legs[1].contact)
         if (opt.forces && a.normalN)
@@ -489,14 +524,14 @@ export function canvasMountain(
             )
           })
       }
-      const gate = gates[f.gatesSeen],
+      const gate = isSafety(setup.technique) ? null : gates[f.gatesSeen],
         target = gate
           ? screen(at(gate.x, gate.d, 2.3))
           : { x: 0, y: 0, visible: false }
       if (plate || !opt.line) target.visible = false
       return {
         upper: screen(upper),
-        leading: screen(local(p.leadingEnd)),
+        studyPoint: screen(local(studyPoint(f, setup, p))),
         lower: screen(lower),
         gate: target,
         bearing: (320 + Math.atan2(fw[0], -fw[2]) / radians + 360) % 360,

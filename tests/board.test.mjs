@@ -34,16 +34,16 @@ test(
     const url = 'http://127.0.0.1:' + host.httpServer.address().port + '/'
     const button = (name) => page.getByRole('button', { name, exact: true })
     await page.goto(url)
-    await page.getByRole('link', { name: 'Snowboard tricks' }).click()
-    const moves = page.getByRole('group', { name: 'Choose a snowboard trick' })
-    assert.equal(await moves.getByRole('button').count(), 9)
+    await page.getByRole('link', { name: 'Snowboarding', exact: true }).click()
+    const moves = page.getByLabel('Lesson', { exact: true })
+    assert.equal(await moves.locator('option').count(), 14)
     for (const [name, slug, grip] of [
       ['Indy grab', 'boardIndy', 'Right glove · toe edge'],
       ['Melon grab', 'boardMelon', 'Left glove · heel edge'],
       ['Nose grab', 'boardNoseGrab', 'Left glove · nose'],
     ]) {
-      await moves.getByRole('button', { name, exact: true }).click()
-      assert.equal(new URL(page.url()).hash, '#snowboard-tricks/' + slug)
+      await moves.selectOption({ label: name })
+      assert.equal(new URL(page.url()).hash, '#snowboarding/' + slug)
       await page
         .locator('.study-surface canvas[data-renderer="webgl"]')
         .waitFor()
@@ -56,7 +56,7 @@ test(
       await button('Landing').click()
       assert.ok(parseFloat(await load.textContent()) > 750)
     }
-    await button('Frontside 180').click()
+    await moves.selectOption('boardFS180')
     await button('Practice this trick').click()
     await page.locator('.trick-hud[data-stance="forward"]').waitFor()
     assert.match(
@@ -135,6 +135,63 @@ test(
     )
     assert.equal(skiRun.setup.technique, 'skiSwitch')
     assert.ok(skiRun.switchRide.distance > 0)
+    await page.goto(url + '#snowboarding/boardStop')
+    const sports = page.getByRole('group', { name: 'Sport', exact: true })
+    assert.deepEqual(await sports.getByRole('button').allTextContents(), [
+      'Skiing',
+      'Snowboarding',
+    ])
+    await page.getByLabel('Uphill edge').selectOption('toe')
+    await page.getByRole('button', { name: 'At rest', exact: true }).click()
+    assert.equal(
+      await page
+        .locator('.safety-study .experiment-stats b')
+        .first()
+        .innerText(),
+      '0.0 km/h',
+    )
+    await page.locator('.safety-study canvas[data-renderer="webgl"]').waitFor()
+    await button('Practice stopping').click()
+    await page.getByRole('main').focus()
+    await page.keyboard.press('e')
+    await page.keyboard.down('Space')
+    await page.locator('.safety-hud[data-phase="rest"]').waitFor()
+    await page.keyboard.up('Space')
+    assert.equal(await page.locator('.readout-speed').innerText(), '0.0')
+    await page.keyboard.press('e')
+    await page
+      .locator('.result-grid')
+      .filter({ hasText: 'Uphill check' })
+      .waitFor()
+    await page.waitForFunction(
+      () =>
+        JSON.parse(localStorage.getItem('fallline.runs') || '[]').length === 3,
+    )
+    const stop = await page.evaluate(
+      () => JSON.parse(localStorage.getItem('fallline.runs'))[0],
+    )
+    assert.equal(stop.setup.stopEdge, 'toe')
+    assert.equal(stop.safety.phase, 'checked')
+    assert.ok(stop.safety.distance > 0 && stop.finished)
+    await page.goto(url + '#skiing/skiFall')
+    assert.equal(await moves.locator('option').count(), 15)
+    await button('Sliding').click()
+    await page.getByLabel('3D study layer').selectOption('contact')
+    await button('Practice fall response').click()
+    await page.getByRole('main').focus()
+    await page.keyboard.down('ArrowDown')
+    await page.locator('.safety-hud[data-phase="rest"]').waitFor()
+    await page.keyboard.up('ArrowDown')
+    await page.getByRole('button', { name: /Check uphill/ }).click()
+    await page.waitForFunction(
+      () =>
+        JSON.parse(localStorage.getItem('fallline.runs') || '[]').length === 4,
+    )
+    const fall = await page.evaluate(
+      () => JSON.parse(localStorage.getItem('fallline.runs'))[0],
+    )
+    assert.equal(fall.safety.guarded, true)
+    assert.equal(fall.points, 0)
     assert.deepEqual(errors, [])
   },
 )

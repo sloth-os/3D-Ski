@@ -53,10 +53,8 @@ test(
       images.add((await world.screenshot()).toString('base64'))
     }
     assert.equal(images.size, 5)
-    await page.getByRole('link', { name: 'Technique lab' }).click()
-    await page
-      .getByRole('button', { name: 'Edge-to-edge carve', exact: true })
-      .click()
+    await page.getByRole('link', { name: 'Snowboarding', exact: true }).click()
+    await page.getByLabel('Lesson', { exact: true }).selectOption('boardCarve')
     await page.locator('.study-surface canvas[data-renderer="webgl"]').waitFor()
     await page.locator('#edge-range').fill('52')
     await page.locator('#speed-range').fill('40')
@@ -100,13 +98,9 @@ test(
       ),
       [],
     )
-    await page.getByRole('link', { name: 'Technique lab' }).click()
-    await page
-      .getByRole('group', { name: 'Lesson collection' })
-      .getByRole('button', { name: 'Ski tricks' })
-      .click()
-    await page.getByRole('button', { name: 'Mute grab', exact: true }).click()
-    assert.equal(new URL(page.url()).hash, '#ski-tricks/muteGrab')
+    await page.getByRole('link', { name: 'Skiing', exact: true }).click()
+    await page.getByLabel('Lesson', { exact: true }).selectOption('muteGrab')
+    assert.equal(new URL(page.url()).hash, '#skiing/muteGrab')
     await page.locator('.study-surface canvas[data-renderer="webgl"]').waitFor()
     await page
       .locator('.study-grip')
@@ -134,7 +128,7 @@ test(
     )
     await slider.fill('15')
     assert.equal(await page.locator('.replay-phase').textContent(), 'Takeoff')
-    await page.getByRole('button', { name: '180', exact: true }).click()
+    await page.getByLabel('Lesson', { exact: true }).selectOption('spin180')
     await page.getByRole('button', { name: 'Practice this trick' }).click()
     await page
       .getByRole('combobox', { name: 'Playback speed' })

@@ -120,7 +120,7 @@ export function SelectField({
   id: string
   label: string
   icon: ReactNode
-  items: { value: string; name: string; group?: string }[]
+  items: { value: string; name: string }[]
   value: string
   onChange: (value: string) => void
 }) {
@@ -136,22 +136,11 @@ export function SelectField({
           value={value}
           onChange={(e) => onChange(e.target.value)}
         >
-          {Array.from(new Set(items.map((item) => item.group))).map((group) => {
-            const options = items
-              .filter((item) => item.group === group)
-              .map((item) => (
-                <option key={item.value} value={item.value}>
-                  {item.name}
-                </option>
-              ))
-            return group ? (
-              <optgroup label={group} key={group}>
-                {options}
-              </optgroup>
-            ) : (
-              options
-            )
-          })}
+          {items.map((item) => (
+            <option key={item.value} value={item.value}>
+              {item.name}
+            </option>
+          ))}
         </select>
         <ChevronDown className="select-chevron" size={15} />
       </div>

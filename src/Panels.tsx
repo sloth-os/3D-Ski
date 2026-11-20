@@ -1,3 +1,4 @@
+import { isFall, safetyPhases } from './safety.ts'
 import {
   ArrowRight,
   Flag,
@@ -60,6 +61,11 @@ export function Controls() {
       keys: ['K'],
       name: 'Pose or grab',
       text: 'In shifty and grab drills, hold K after takeoff and release before touching down. In spin drills, hold left or right as J is released to set the rotation.',
+    },
+    {
+      keys: ['E'],
+      name: 'Check uphill',
+      text: 'In a stopping or falling drill, press E or tap Check uphill once the rider has come to rest.',
     },
     {
       keys: ['V'],
@@ -173,7 +179,13 @@ export function RunDetails({
         </span>
         <div>
           <span className="eyebrow">
-            {record.finished ? 'Course complete' : 'Practice session'}
+            {record.safety
+              ? record.finished
+                ? 'Drill complete'
+                : 'Drill review'
+              : record.finished
+                ? 'Course complete'
+                : 'Practice session'}
           </span>
           <h3>{c.name}</h3>
           <p>
@@ -182,52 +194,98 @@ export function RunDetails({
             {surfaces[record.setup.surface].name}
           </p>
         </div>
-        <strong>
-          {record.points}
-          <small>points</small>
-        </strong>
+        {!record.safety && (
+          <strong>
+            {record.points}
+            <small>points</small>
+          </strong>
+        )}
       </div>
       <div className="result-grid">
-        {[
-          ['Gates cleared', record.gates + ' / ' + c.gates],
-          ['Linked turns', record.turns],
-          ['Time', duration(record.seconds)],
-          ['Distance', lengthText(record.distance, units)],
-          [
-            'Top speed',
-            (record.peak * (metric ? 1 : 0.621371)).toFixed(1) +
-              ' ' +
-              (metric ? 'km/h' : 'mph'),
-          ],
-          [
-            record.freestyle
-              ? 'Clean landings'
-              : isSwitchDrill(record.setup.technique)
-                ? 'Switch edge control'
-                : 'In edge range',
-            record.quality + '%',
-          ],
-          ...(record.switchRide
-            ? [
-                [
-                  'Switch distance',
-                  lengthText(record.switchRide.distance, units),
-                ],
-                ['Switch linked turns', record.switchRide.turns],
-                ['Switch gates', record.switchRide.gates],
-              ]
-            : []),
-          ...(record.freestyle
-            ? [
-                [
-                  'Tricks landed',
-                  record.freestyle.landed + ' / ' + record.freestyle.attempts,
-                ],
-                ['Best airtime', record.freestyle.bestTime.toFixed(2) + ' s'],
-                ['Trick points', record.freestyle.points],
-              ]
-            : []),
-        ].map(([name, value]) => (
+        {(record.safety
+          ? [
+              ['Last phase', safetyPhases[record.safety.phase]],
+              [
+                isFall(record.setup.technique)
+                  ? 'Speed at contact'
+                  : 'Speed at brake onset',
+                record.safety.speed > 0
+                  ? (record.safety.speed * (metric ? 1 : 0.621371)).toFixed(1) +
+                    (metric ? ' km/h' : ' mph')
+                  : '—',
+              ],
+              [
+                isFall(record.setup.technique)
+                  ? 'Slide distance'
+                  : 'Braking distance',
+                (record.safety.distance * (metric ? 1 : 3.28084)).toFixed(1) +
+                  (metric ? ' m' : ' ft'),
+              ],
+              [
+                'Time to rest',
+                record.safety.seconds > 0
+                  ? record.safety.seconds.toFixed(1) + ' s'
+                  : '—',
+              ],
+              ...(isFall(record.setup.technique)
+                ? [
+                    [
+                      'Flex at contact',
+                      record.safety.guarded ? 'Rehearsed' : 'Try the flex cue',
+                    ],
+                  ]
+                : []),
+              [
+                'Uphill check',
+                record.safety.phase === 'checked' ? 'Completed' : 'Pending',
+              ],
+            ]
+          : [
+              ['Gates cleared', record.gates + ' / ' + c.gates],
+              ['Linked turns', record.turns],
+              ['Time', duration(record.seconds)],
+              ['Distance', lengthText(record.distance, units)],
+              [
+                'Top speed',
+                (record.peak * (metric ? 1 : 0.621371)).toFixed(1) +
+                  ' ' +
+                  (metric ? 'km/h' : 'mph'),
+              ],
+              [
+                record.freestyle
+                  ? 'Clean landings'
+                  : isSwitchDrill(record.setup.technique)
+                    ? 'Switch edge control'
+                    : 'In edge range',
+                record.quality + '%',
+              ],
+              ...(record.switchRide
+                ? [
+                    [
+                      'Switch distance',
+                      lengthText(record.switchRide.distance, units),
+                    ],
+                    ['Switch linked turns', record.switchRide.turns],
+                    ['Switch gates', record.switchRide.gates],
+                  ]
+                : []),
+              ...(record.freestyle
+                ? [
+                    [
+                      'Tricks landed',
+                      record.freestyle.landed +
+                        ' / ' +
+                        record.freestyle.attempts,
+                    ],
+                    [
+                      'Best airtime',
+                      record.freestyle.bestTime.toFixed(2) + ' s',
+                    ],
+                    ['Trick points', record.freestyle.points],
+                  ]
+                : []),
+            ]
+        ).map(([name, value]) => (
           <div key={name}>
             <span>{name}</span>
             <b>{value}</b>
@@ -239,7 +297,9 @@ export function RunDetails({
         <div>
           <h3>Next run</h3>
           <p>
-            {record.freestyle || isSwitchDrill(record.setup.technique)
+            {record.safety ||
+            record.freestyle ||
+            isSwitchDrill(record.setup.technique)
               ? techniques[record.setup.technique].watch
               : record.gates === c.gates
                 ? 'You cleared every gate. Repeat on a different snow surface and compare your turn shape.'
@@ -338,7 +398,9 @@ export function Log({
               <span className="log-state">
                 {r.finished ? 'Completed' : 'Practice'}
               </span>
-              <span className="log-points">{r.points} pts</span>
+              <span className="log-points">
+                {r.safety ? safetyPhases[r.safety.phase] : r.points + ' pts'}
+              </span>
               <ArrowRight size={17} />
             </button>
           ))}

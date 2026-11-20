@@ -979,8 +979,7 @@ body {
   background: #091b24a3;
   backdrop-filter: blur(6px);
 }
-.ski-sim .scheme-tabs .selected,
-.ski-sim .tech-tabs .selected {
+.ski-sim .scheme-tabs .selected {
   background: #344a36;
   border-color: #78915c;
   color: var(--acid);
@@ -1111,26 +1110,6 @@ body {
 .ski-sim .lab-view .page-heading,
 .ski-sim .log-view .page-heading h1 {
   display: none;
-}
-.ski-sim .lab-view .tech-tabs {
-  margin: 8px 0 15px;
-}
-.lesson-collections {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 16px;
-  border-bottom: 1px solid #39494f;
-}
-.lesson-collections button {
-  font-size: 12px;
-  font-weight: 650;
-  color: #aabdc1;
-  padding: 4px 0 6px;
-  border-bottom: 2px solid transparent;
-}
-.lesson-collections button[aria-pressed='true'] {
-  color: var(--acid);
-  border-bottom-color: var(--acid);
 }
 .ski-sim .lab-view .panel,
 .ski-sim .log-view .panel {
@@ -1779,16 +1758,6 @@ body {
 .switch-study .scheme-tabs {
   margin-top: 10px;
 }
-.ski-sim .freestyle-lab .tech-tabs {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 5px;
-}
-.ski-sim .freestyle-lab .tech-tabs button {
-  min-height: 32px;
-  font-size: 12px;
-  flex: 1 1 auto;
-}
 .trick-study .replay-scene {
   position: relative;
 }
@@ -1901,39 +1870,6 @@ body {
   color: var(--acid);
   font-size: 11px;
 }
-.freestyle-lab .lesson-toolbar {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) auto;
-  align-items: end;
-  column-gap: 12px;
-}
-.freestyle-lab .lesson-toolbar .tech-tabs {
-  grid-column: 1/-1;
-  grid-row: 2;
-}
-.freestyle-lab .lesson-toolbar .lesson-actions {
-  grid-column: 2;
-  grid-row: 1;
-}
-.freestyle-lab .lesson-toolbar .lesson-actions button {
-  min-height: 34px;
-  padding: 5px 12px;
-  font-size: 12px;
-}
-@media (max-width: 600px) {
-  .freestyle-lab .lesson-toolbar {
-    display: block;
-  }
-  .ski-sim .freestyle-lab .lesson-toolbar .tech-tabs {
-    margin-bottom: 8px;
-  }
-  .freestyle-lab .lesson-toolbar .lesson-actions {
-    margin-bottom: 12px;
-  }
-  .freestyle-lab .lesson-toolbar .lesson-actions button {
-    flex: auto;
-  }
-}
 @media (max-width: 930px) {
   .game-tools nav a {
     width: 32px;
@@ -1949,14 +1885,6 @@ body {
   .freestyle-lab .lab-grid {
     grid-template-columns: minmax(0, 1fr);
   }
-  .ski-sim .freestyle-lab .tech-tabs {
-    display: grid;
-    grid-template-columns: repeat(4, minmax(0, 1fr));
-  }
-  .ski-sim .freestyle-lab .tech-tabs button {
-    font-size: 10.5px;
-    padding: 3px;
-  }
   .trick-study .study-surface {
     height: 230px;
   }
@@ -1966,22 +1894,6 @@ body {
     min-height: 23px;
     font-size: 9px;
     padding: 2px 5px;
-  }
-  .lesson-collections {
-    display: grid;
-    grid-template-columns: repeat(4, minmax(0, 1fr));
-    gap: 4px;
-  }
-  .lesson-collections button {
-    font-size: 10px;
-    line-height: 1.15;
-    min-height: 32px;
-  }
-  .ski-sim .freestyle-lab[data-collection='snowboard-tricks'] .tech-tabs {
-    grid-template-columns: repeat(3, minmax(0, 1fr));
-  }
-  .ski-sim .freestyle-lab[data-collection='switch-riding'] .tech-tabs {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
   }
   .game-tools nav a {
     width: 27px;
@@ -2024,5 +1936,134 @@ body {
   }
   .trick-hud .touch-hint {
     display: inline;
+  }
+}
+.sport-toolbar {
+  display: grid;
+  grid-template-columns: minmax(205px, auto) minmax(160px, 1fr) auto;
+  align-items: end;
+  gap: 16px;
+  margin: 0 0 18px;
+}
+.sport-toolbar .field {
+  margin: 0;
+  min-width: 0;
+}
+.sport-toolbar .scheme-tabs {
+  margin: 0;
+  min-width: 0;
+}
+.sport-toolbar .scheme-tabs button,
+.sport-toolbar .lesson-actions button {
+  min-height: 37px;
+}
+.sport-toolbar .lesson-actions {
+  margin: 0;
+  align-self: end;
+  flex-wrap: nowrap;
+}
+.sport-toolbar .select-wrap select {
+  width: 100%;
+}
+.sport-lab .experiment {
+  order: -1;
+  min-width: 0;
+}
+.safety-hud {
+  border-left-color: #80e6d0;
+  pointer-events: auto;
+}
+.safety-hud p {
+  margin: 4px 0;
+  color: #e0eef0;
+  font: 600 12px/1.4 var(--sans, sans-serif);
+}
+.safety-check {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  background: var(--acid);
+  color: #172a25;
+  border: 0;
+  border-radius: 4px;
+  padding: 6px 9px;
+  font-weight: 700;
+}
+.safety-check:disabled {
+  opacity: 0.6;
+}
+.lesson-sources {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px 16px;
+}
+.study-choice {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  font-size: 12px;
+  color: #c5d9d9;
+}
+.study-choice select {
+  padding: 6px 9px;
+  border: 1px solid #668483;
+  border-radius: 4px;
+  background: #172b30;
+  color: #eff7f6;
+  font: inherit;
+}
+@media (max-width: 860px) {
+  .sport-toolbar {
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1.4fr);
+    gap: 8px 12px;
+  }
+  .sport-toolbar .lesson-actions {
+    grid-column: 1/-1;
+    justify-content: flex-start;
+  }
+}
+@media (max-width: 650px) {
+  .game-tools nav .sport-link {
+    width: auto;
+    padding: 0 5px;
+    min-height: 32px;
+  }
+  .game-tools nav .sport-link span {
+    display: inline;
+    font-size: 10px;
+  }
+  .game-tools .sport-link svg {
+    display: none;
+  }
+  .sport-toolbar {
+    grid-template-columns: minmax(0, 1fr);
+    margin-bottom: 12px;
+  }
+  .sport-toolbar .lesson-actions button {
+    flex: 1 1 auto;
+    font-size: 12px;
+    padding: 5px 8px;
+  }
+  .sport-toolbar .scheme-tabs button {
+    min-height: 32px;
+  }
+  .safety-hud p {
+    font-size: 10px;
+  }
+  .safety-hud .safety-check {
+    min-height: 32px;
+  }
+}
+
+@media (max-width: 390px) {
+  .sport-toolbar .lesson-actions {
+    flex-wrap: wrap;
+  }
+  .game-brand .brand-type {
+    font-size: 22px;
+  }
+  .game-tools {
+    gap: 1px;
   }
 }

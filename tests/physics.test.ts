@@ -1,3 +1,4 @@
+import { isSafety } from '../src/safety.ts'
 import test from 'node:test'
 import {
   analyse,
@@ -104,10 +105,12 @@ test('gate crossings score once and the course ends at its measured length', () 
     assert.equal(f.t, time)
   }
 })
-test('all terrain, snow, and technique combinations stay finite through the finish', () => {
+test('all gate-course techniques, terrain and snow combinations stay finite through the finish', () => {
   for (const course of Object.keys(courses) as CourseId[])
     for (const surface of ['groomed', 'powder', 'ice'] as SurfaceId[])
-      for (const technique of Object.keys(techniques) as TechniqueId[]) {
+      for (const technique of Object.keys(techniques).filter(
+        (id) => !isSafety(id),
+      ) as TechniqueId[]) {
         const setup = { course, surface, technique },
           f = emptyFrame(),
           gates = buildGates(courses[course])
@@ -229,7 +232,9 @@ test('snowboard skidding pivots the board across the velocity and brakes the rid
   )
 })
 test('all ski and snowboard reference riders clear the Alpine Ridge gates', () => {
-  for (const technique of Object.keys(techniques) as TechniqueId[]) {
+  for (const technique of Object.keys(techniques).filter(
+    (id) => !isSafety(id),
+  ) as TechniqueId[]) {
     const setup = { ...defaultSetup, technique },
       gates = buildGates(courses.ridge),
       f = emptyFrame()

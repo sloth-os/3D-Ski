@@ -1,3 +1,4 @@
+import { isSafety, isFall, safetyLessons, contactOnBody } from './safety.ts'
 import { useEffect, useRef, useState } from 'react'
 import { Camera, Pause, Play, RotateCcw } from 'lucide-react'
 import { analyse, idealTurn, type Lens } from './analysis.ts'
@@ -93,15 +94,16 @@ export function PoseStudy({
                 : a.edgeName + ' · ' + Math.round(f.load) + '% outside'
           }
           if (label) {
-            const aimAtEnd = opt.switched !== undefined
-            const at = aimAtEnd ? projection.leading : projection.lower
+            const useStudyPoint = opt.switched !== undefined || !!f.safety
+            const at = useStudyPoint ? projection.studyPoint : projection.lower
             label.hidden =
               !at.visible ||
-              (!aimAtEnd && (opt.lens !== 'body' || f.air.pose < 0.99))
+              (!useStudyPoint && (opt.lens !== 'body' || f.air.pose < 0.99))
             label.style.left = at.x * 100 + '%'
             label.style.top = at.y * 100 + '%'
             label.dataset.flip = String(
-              at.x * host.clientWidth > host.clientWidth - 150,
+              at.x * host.clientWidth >
+                host.clientWidth - label.offsetWidth - 24 && at.x > 0.5,
             )
           }
           refresh.current = false
@@ -120,6 +122,17 @@ export function PoseStudy({
     }
   }, [setup, trail])
   const grip = gripFor(setup.technique, frame?.air.switch ?? false)
+  const safetyMark = frame?.safety
+    ? isFall(setup.technique)
+      ? contactOnBody(frame.safety) > 0.2
+        ? 'Hip contact'
+        : 'Soft knees'
+      : setup.technique === 'skiStop'
+        ? 'Inside edge'
+        : setup.stopEdge === 'toe'
+          ? 'Uphill toe edge'
+          : 'Uphill heel edge'
+    : null
   const board = equipmentFor(setup.technique) === 'snowboard'
   return (
     <div className="pose-study">
@@ -129,8 +142,13 @@ export function PoseStudy({
         role="img"
         aria-label={
           frame
-            ? (board ? '3D snowboard trick replay.' : '3D ski trick replay.') +
-              ' Drag to orbit the rider.'
+            ? (isSafety(setup.technique)
+                ? '3D movement study of ' +
+                  safetyLessons[setup.technique].name +
+                  '.'
+                : board
+                  ? '3D snowboard trick replay.'
+                  : '3D ski trick replay.') + ' Drag to orbit the rider.'
             : 'Interactive 3D rider showing the selected edge angle and body position. Drag to orbit.'
         }
         onPointerDown={(e) => {
@@ -147,19 +165,20 @@ export function PoseStudy({
         }}
         onLostPointerCapture={() => (pointer.current = null)}
       />
-      {(grip || switched !== undefined) && (
+      {(grip || switched !== undefined || safetyMark) && (
         <span className="study-grip" ref={gripLabel} hidden>
-          {grip
-            ? (grip.hand === 1 ? 'Right glove' : 'Left glove') +
-              ' · ' +
-              grip.target
-            : board
-              ? switched
-                ? 'Tail · right foot leads'
-                : 'Nose · left foot leads'
-              : switched
-                ? 'Ski tails lead'
-                : 'Ski tips lead'}
+          {safetyMark ??
+            (grip
+              ? (grip.hand === 1 ? 'Right glove' : 'Left glove') +
+                ' · ' +
+                grip.target
+              : board
+                ? switched
+                  ? 'Tail · right foot leads'
+                  : 'Nose · left foot leads'
+                : switched
+                  ? 'Ski tails lead'
+                  : 'Ski tips lead')}
         </span>
       )}
       <div className="study-tools">

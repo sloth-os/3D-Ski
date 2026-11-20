@@ -1,6 +1,7 @@
 import * as THREE from 'three'
 import {
   lensColors,
+  mixPoint,
   riderMass,
   gravity,
   type ForceState,
@@ -114,6 +115,7 @@ export function makeLens(scene: THREE.Scene) {
       arrow(contact, lensColors.support),
       arrow(contact, lensColors.drag),
     ],
+    bodySupport = arrow(contact, lensColors.gravity),
     shear = arrow(contact, lensColors.gravity)
   const pads = [0, 1].map((i) => {
     const m = new THREE.Mesh(
@@ -164,7 +166,12 @@ export function makeLens(scene: THREE.Scene) {
           contactPoint[j] =
             p.legs[0].contact[j] * a.firstShare +
             p.legs[1].contact[j] * (1 - a.firstShare)
-        upper.copy(reaction(point(scratch, contactPoint), a.reaction))
+        upper.copy(
+          reaction(
+            point(scratch, mixPoint(contactPoint, p.bodyContact, a.bodyShare)),
+            a.reaction,
+          ),
+        )
         weight(com, a.weight)
         const dragTip = drag(com, a.drag)
         if (!a.normalN) upper.copy(dragTip)
@@ -207,6 +214,10 @@ export function makeLens(scene: THREE.Scene) {
           if (i === 0) upper.copy(pos)
           else lower.copy(pos)
         }
+        bodySupport(
+          point(scratch, p.bodyContact),
+          a.normal.map((n) => n * a.bodySupportN) as Point3,
+        )
         shear(lower, a.forward.map((n) => -n * a.frictionN) as Point3)
       }
     },

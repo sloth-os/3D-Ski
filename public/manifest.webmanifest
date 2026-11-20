@@ -2,7 +2,7 @@
   "id": "./",
   "name": "Fallline Alpine Simulator",
   "short_name": "Fallline",
-  "description": "Practice ski and snowboard tricks, ski backwards, and ride switch on offline 3D courses with interactive replays and force analysis.",
+  "description": "Explore skiing and snowboarding lessons with 3D stop and fall practice, turns, switch riding, tricks and force analysis on offline courses.",
   "lang": "en",
   "start_url": "./",
   "scope": "./",

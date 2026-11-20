@@ -350,14 +350,12 @@ option {
   height: 14px;
   stroke-width: 1.75;
 }
-.scheme-tabs .selected,
-.tech-tabs .selected {
+.scheme-tabs .selected {
   background: #19372f;
   color: #7ae9c4;
   border-color: #416e5f;
 }
-.scheme-tabs button:hover,
-.tech-tabs button:hover {
+.scheme-tabs button:hover {
   border-color: #568372;
 }
 .toggle-row {
@@ -858,21 +856,6 @@ progress::-moz-progress-bar {
   padding: 9px 14px;
   font-size: 13px;
 }
-.tech-tabs {
-  display: flex;
-  gap: 7px;
-  margin-bottom: 18px;
-  flex-wrap: wrap;
-}
-.tech-tabs button {
-  border: 1px solid #333e4a;
-  border-radius: 7px;
-  color: #b7c4d0;
-  background: #171e28;
-  padding: 8px 12px;
-  font-size: 13px;
-  font-weight: 550;
-}
 .lab-grid {
   display: grid;
   grid-template-columns: 1fr 0.92fr;
@@ -1275,13 +1258,6 @@ input[type='range'] {
   }
   .lab-grid {
     grid-template-columns: 1fr;
-  }
-  .tech-tabs {
-    gap: 5px;
-  }
-  .tech-tabs button {
-    font-size: 11px;
-    padding: 7px 9px;
   }
   .surface-notes > div {
     grid-template-columns: 1fr;

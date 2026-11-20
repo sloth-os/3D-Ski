@@ -1,3 +1,4 @@
+import { isSafety } from './safety.ts'
 import { bodyHeading } from './air.ts'
 import * as THREE from 'three'
 import {
@@ -14,7 +15,7 @@ import {
   worldHeight,
   type Frame,
 } from './physics.ts'
-import { analyse, riderPose } from './analysis.ts'
+import { analyse, riderPose, studyPoint } from './analysis.ts'
 import {
   cameraShot,
   travelArrow,
@@ -293,7 +294,10 @@ export function createMountain(
   camera.updateProjectionMatrix()
   return {
     draw(f, opt) {
-      const plate = isTrailhead(opt) && setup.course === 'ridge'
+      const plate =
+        !isSafety(setup.technique) &&
+        isTrailhead(opt) &&
+        setup.course === 'ridge'
       const now = performance.now() / 1000,
         dt = Math.min(0.15, Math.max(0, now - lastTime)),
         snap = !lastTime || opt.reduced || f.d < oldD - 1 || wasPlate !== plate
@@ -304,7 +308,7 @@ export function createMountain(
       terrain.visible = !plate
       sky.visible = !study && !plate
       catcher.visible = plate
-      guide.visible = opt.line && !plate
+      guide.visible = !isSafety(setup.technique) && opt.line && !plate
       const pitch = (f.pitch || c.pitch) * radians
       pos.set(f.x, worldHeight(c, f.d, f.x), zAt(c, f.d))
       if (study) {
@@ -359,7 +363,7 @@ export function createMountain(
       camera.lookAt(dest.copy(pos).add(target))
       camera.updateMatrixWorld()
       renderer.render(scene, camera)
-      const gate = gates[f.gatesSeen],
+      const gate = isSafety(setup.technique) ? null : gates[f.gatesSeen],
         g = gate
           ? project(pointAt(c, gate.x, gate.d, 2.3))
           : { x: 0, y: 0, visible: false }
@@ -367,8 +371,10 @@ export function createMountain(
       camera.getWorldDirection(dest)
       return {
         upper: project(lens.upper),
-        leading: project(
-          aim.fromArray(pose.leadingEnd).applyMatrix4(skier.root.matrixWorld),
+        studyPoint: project(
+          aim
+            .fromArray(studyPoint(f, setup, pose))
+            .applyMatrix4(skier.root.matrixWorld),
         ),
         lower: project(lens.lower),
         gate: g,

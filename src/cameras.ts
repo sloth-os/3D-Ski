@@ -42,7 +42,7 @@ export type ViewOptions = {
 }
 export type ScreenPoint = { x: number; y: number; visible: boolean }
 export type Projection = {
-  leading: ScreenPoint
+  studyPoint: ScreenPoint
   upper: ScreenPoint
   lower: ScreenPoint
   gate: ScreenPoint
@@ -95,7 +95,12 @@ export function cameraShot(
       const look = heading + quiet * (bodyHeading(f) + f.boardYaw + gaze)
       const eye: Point3 = [
         Math.sin(f.lean) * 0.36,
-        lift + 1.56 - f.flex * 0.24 - f.tuck * 0.17 + bob,
+        lift +
+          1.56 -
+          f.flex * 0.24 -
+          f.tuck * 0.17 +
+          bob -
+          (f.safety?.fall ?? 0) * 0.9,
         -0.03,
       ]
       return {
@@ -132,6 +137,10 @@ export function cameraShot(
       targetZ = -5
       fov = 56
       break
+  }
+  if (f.safety) {
+    targetY -= 0.36 * f.safety.fall
+    if (opt.camera === 'side') angle -= 0.44
   }
   angle += opt.orbit
   const zoom = clamp(opt.zoom, 0.59, 1.85),

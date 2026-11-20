@@ -1,3 +1,13 @@
+import {
+  sportNames,
+  sportFor,
+  lessonFor,
+  lessonsFor,
+  type Sport,
+} from './library.ts'
+import { SafetyStudy } from './SafetyStudy.tsx'
+import { isSafety, isFall } from './safety.ts'
+import { SchemeTabs, SelectField } from './UI.tsx'
 import { useMemo, useState } from 'react'
 import { SwitchStudy } from './SwitchStudy.tsx'
 import { TrickStudy } from './TrickStudy.tsx'
@@ -21,11 +31,7 @@ import {
   surfaces,
   techniques,
   equipmentFor,
-  lessonInCollection,
-  collectionNames,
-  collectionFor,
   isSwitchDrill,
-  type Collection,
   type Setup,
   type TechniqueId,
 } from './course.ts'
@@ -41,15 +47,25 @@ export function Lab({
   setup: Setup
   id: TechniqueId
   select: (id: TechniqueId) => void
-  practice: (id: TechniqueId, demo?: boolean) => void
+  practice: (
+    id: TechniqueId,
+    demo?: boolean,
+    stopEdge?: Setup['stopEdge'],
+  ) => void
   units: Prefs['units']
 }) {
   const [angle, setAngle] = useState(32),
     [speed, setSpeed] = useState(28)
-  const collection = collectionFor(id),
-    studio = collection !== 'technique-lab'
+  const sport = sportFor(id),
+    studio = isTrick(id) || isSwitchDrill(id) || isSafety(id)
+  const [stopEdge, setStopEdge] = useState<NonNullable<Setup['stopEdge']>>(
+    setup.stopEdge ?? 'heel',
+  )
   const t = techniques[id],
-    study = useMemo(() => ({ ...setup, technique: id }), [setup, id])
+    study = useMemo(
+      () => ({ ...setup, technique: id, stopEdge }),
+      [setup, id, stopEdge],
+    )
   const f = idealTurn(study, angle, speed),
     board = equipmentFor(id) === 'snowboard'
   const load = board ? 100 * analyse(f, study).firstShare : f.load,
@@ -57,67 +73,53 @@ export function Lab({
     a = f.lateralAccel
   const actions = (
     <div className="lesson-actions">
-      <button className="primary" onClick={() => practice(id)}>
+      <button className="primary" onClick={() => practice(id, false, stopEdge)}>
         <Play size={16} fill="currentColor" />
-        {isTrick(id)
-          ? 'Practice this trick'
-          : isSwitchDrill(id)
-            ? 'Practice switch'
-            : 'Practice this technique'}
+        {isSafety(id)
+          ? isFall(id)
+            ? 'Practice fall response'
+            : 'Practice stopping'
+          : isTrick(id)
+            ? 'Practice this trick'
+            : isSwitchDrill(id)
+              ? 'Practice switch'
+              : 'Practice this technique'}
         <ArrowRight size={16} />
       </button>
-      <button className="outline-btn" onClick={() => practice(id, true)}>
+      <button
+        className="outline-btn"
+        onClick={() => practice(id, true, stopEdge)}
+      >
         Watch demo
       </button>
     </div>
   )
   return (
-    <div
-      className={studio ? 'lab-view freestyle-lab' : 'lab-view'}
-      data-collection={collection}
-    >
-      <div className="lesson-toolbar">
-        <div
-          className="lesson-collections"
-          role="group"
-          aria-label="Lesson collection"
-        >
-          {(Object.keys(collectionNames) as Collection[]).map((key) => (
-            <button
-              key={key}
-              aria-pressed={key === collection}
-              disabled={key === collection}
-              onClick={() => select(lessonInCollection(key, setup.technique))}
-            >
-              {collectionNames[key]}
-            </button>
-          ))}
-        </div>
-        <div
-          className="tech-tabs"
-          role="group"
-          aria-label={
-            collection === 'ski-tricks'
-              ? 'Choose a ski trick'
-              : collection === 'snowboard-tricks'
-                ? 'Choose a snowboard trick'
-                : collectionNames[collection]
-          }
-        >
-          {(Object.keys(techniques) as TechniqueId[])
-            .filter((key) => collectionFor(key) === collection)
-            .map((key) => (
-              <button
-                key={key}
-                aria-pressed={key === id}
-                onClick={() => select(key)}
-                className={id === key ? 'selected' : ''}
-              >
-                {techniques[key].name}
-              </button>
-            ))}
-        </div>
-        {studio && actions}
+    <div className="lab-view freestyle-lab sport-lab" data-sport={sport}>
+      <div className="sport-toolbar">
+        <SchemeTabs<Sport>
+          label="Sport"
+          value={sport}
+          onChange={(key) => {
+            if (key !== sport) select(lessonFor(key, setup.technique))
+          }}
+          items={(Object.keys(sportNames) as Sport[]).map((key) => ({
+            id: key,
+            name: sportNames[key],
+          }))}
+        />
+        <SelectField
+          id="lab-lesson"
+          label="Lesson"
+          icon={<BookOpen size={16} />}
+          value={id}
+          items={lessonsFor(sport).map((value) => ({
+            value,
+            name: techniques[value].name,
+          }))}
+          onChange={(key) => select(key as TechniqueId)}
+        />
+        {actions}
       </div>
       <div className="lab-grid">
         <section className="panel lab-lesson">
@@ -146,9 +148,16 @@ export function Lab({
               <p>{t.watch}</p>
             </div>
           </div>
-          {!studio && actions}
         </section>
-        {isTrick(id) ? (
+        {isSafety(id) ? (
+          <SafetyStudy
+            setup={study}
+            key={id + stopEdge}
+            id={id}
+            units={units}
+            edgeChange={setStopEdge}
+          />
+        ) : isTrick(id) ? (
           <TrickStudy key={id} setup={study} id={id} units={units} />
         ) : isSwitchDrill(id) ? (
           <SwitchStudy key={id} setup={study} id={id} />
