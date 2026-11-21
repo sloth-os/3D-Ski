@@ -1,3 +1,10 @@
+import {
+  muscleWork,
+  muscleBands,
+  muscleCenter,
+  effortColors,
+  effortBand,
+} from '../muscles.ts'
 import { isSafety, laneLength } from '../safety.ts'
 import { bodyHeading, boardHeadYaw, shoulderLook } from '../air.ts'
 import { courses, equipmentFor, isSwitchDrill, type Setup } from '../course.ts'
@@ -10,8 +17,6 @@ import {
 import {
   studyPoint,
   analyse,
-  guardHand,
-  guardElbow,
   mixPoint,
   deckPoint,
   transformPoint,
@@ -382,11 +387,13 @@ export function canvasMountain(
           0.032,
         )
       }
+      const anatomy =
+        opt.forces && opt.lens === 'muscles' && opt.camera !== 'first'
       const torso = (v: Point3) => local(transformPoint(p.torso, v))
       if (opt.camera !== 'first') {
         for (const l of p.legs) {
-          stroke(local(l.hip), local(l.knee), '#273744', 0.212)
-          stroke(local(l.knee), local(l.ankle), '#23313c', 0.17)
+          stroke(local(l.hip), local(l.knee), '#273744', anatomy ? 0.12 : 0.212)
+          stroke(local(l.knee), local(l.ankle), '#23313c', anatomy ? 0.1 : 0.17)
           ball(local(l.ankle), 0.081, '#24333b')
           if (board)
             stroke(
@@ -396,39 +403,31 @@ export function canvasMountain(
               0.095,
             )
         }
-        stroke(torso([0, 0.023, 0]), torso([0, 0.41, 0]), '#da652c', 0.39)
         stroke(
-          torso([0, 0.14, 0.085]),
-          torso([0, 0.37, 0.09]),
-          '#39443a',
-          0.195,
+          torso([0, 0.023, 0]),
+          torso([0, 0.41, 0]),
+          anatomy ? '#334a55' : '#da652c',
+          anatomy ? 0.31 : 0.39,
         )
-        for (const s of [-1, 1]) {
-          let hand = torso([
-            s * (board ? 0.51 : 0.4) + p.shifty * 0.11,
-            0.11,
-            -0.21 + s * p.shifty * 0.16,
-          ])
-          let elbow = torso([s * 0.32, 0.22, -0.015])
-          if (p.guard) {
-            hand = mixPoint(hand, torso(guardHand(s)), p.guard)
-            elbow = mixPoint(elbow, torso(guardElbow(s)), p.guard)
-          }
-          if (p.grab?.hand === s) {
-            hand = add3(
-              scale3(hand, 1 - p.grab.weight),
-              scale3(local(p.grab.point), p.grab.weight),
-            )
-            elbow = add3(
-              scale3(elbow, 1 - p.grab.weight),
-              scale3(local(p.grab.elbow), p.grab.weight),
-            )
-          }
-          stroke(torso([s * 0.218, 0.423, -0.03]), elbow, '#de6d33', 0.152)
-          stroke(elbow, hand, '#c2552d', 0.118)
+        if (!anatomy)
+          stroke(
+            torso([0, 0.14, 0.085]),
+            torso([0, 0.37, 0.09]),
+            '#39443a',
+            0.195,
+          )
+        for (const arm of p.arms) {
+          const hand = local(arm.hand),
+            elbow = local(arm.elbow)
+          stroke(
+            local(arm.shoulder),
+            elbow,
+            anatomy ? '#3b515c' : '#de6d33',
+            anatomy ? 0.096 : 0.152,
+          )
+          stroke(elbow, hand, anatomy ? '#40545c' : '#c2552d', 0.118)
           ball(hand, 0.061, '#1c292e')
-          if (!board)
-            stroke(hand, local([s * 0.62, 0.065, 0.39]), '#586975', 0.013)
+          if (!board) stroke(hand, local(arm.poleTip), '#586975', 0.013)
         }
         ball(torso([0, 0.58, -0.06]), 0.125, '#253238')
         const helmet = torso([0, 0.683, -0.082])
@@ -491,6 +490,57 @@ export function canvasMountain(
           }
         }
       }
+      let work
+      if (anatomy) {
+        work = muscleWork(f, setup, p, a)
+        const focus = opt.muscle ?? 'auto',
+          id = focus === 'auto' ? work.primary : focus
+        const bands = muscleBands(p)
+        const pair = bands.filter((b) => b.id === id)
+        upper = local(muscleCenter(pair[0]))
+        lower = local(muscleCenter(pair[1]))
+        const sorted = bands.map((b) => ({
+          b,
+          from: project(local(b.from)),
+          to: project(local(b.to)),
+        }))
+        sorted.sort(
+          (l, r) => r.from.depth + r.to.depth - l.from.depth - l.to.depth,
+        )
+        for (const { b, from, to } of sorted) {
+          if (Math.min(from.depth, to.depth) < 0.06) continue
+          const dx = to.x - from.x,
+            dy = to.y - from.y,
+            len = Math.hypot(dx, dy) / 2
+          const width = (from.k + to.k) * 0.5 * b.radius
+          if (len < 0.1 || width < 0.1) continue
+          const color =
+            focus === 'auto' || b.id === id
+              ? effortColors[effortBand(work.limbs[b.limb].levels[b.id])]
+              : '#587075'
+          ctx.save()
+          ctx.translate((from.x + to.x) / 2, (from.y + to.y) / 2)
+          ctx.rotate(Math.atan2(dy, dx))
+          const grad = ctx.createLinearGradient(0, -width, 0, width)
+          grad.addColorStop(0, '#36474c')
+          grad.addColorStop(0.36, color)
+          grad.addColorStop(0.69, color)
+          grad.addColorStop(1, '#344248')
+          ctx.fillStyle = grad
+          ctx.beginPath()
+          ctx.ellipse(0, 0, len, width, 0, 0, Math.PI * 2)
+          ctx.fill()
+          ctx.strokeStyle = '#ffffff48'
+          ctx.lineWidth = Math.min(1, width * 0.13)
+          for (const side of [-1, 1]) {
+            ctx.beginPath()
+            ctx.moveTo(-len * 0.8, 0)
+            ctx.quadraticCurveTo(0, side * width, len * 0.8, 0)
+            ctx.stroke()
+          }
+          ctx.restore()
+        }
+      }
       if (opt.lens === 'contact') {
         if (opt.forces && a.bodySupportN > 0)
           arrow(
@@ -530,6 +580,7 @@ export function canvasMountain(
           : { x: 0, y: 0, visible: false }
       if (plate || !opt.line) target.visible = false
       return {
+        muscles: work,
         upper: screen(upper),
         studyPoint: screen(local(studyPoint(f, setup, p))),
         lower: screen(lower),

@@ -48,6 +48,9 @@ function jump(
   for (let i = 0; i < chargeFrames; i++)
     step(f, { ...neutralInput, jump: true }, setup, [], tick)
   step(f, { ...neutralInput, steer }, setup, [], tick)
+  assert.ok(f.air.phase === 'load' && f.air.pushElapsed > 0)
+  for (let i = 0; i < 12 && f.air.phase === 'load'; i++)
+    step(f, neutralInput, setup, [], tick)
   assert.equal(f.air.phase, 'flight')
   for (let i = 0; i < 100 && f.air.phase === 'flight'; i++) {
     step(f, { ...neutralInput, pose: pose(f) }, setup, [], tick)
@@ -208,6 +211,8 @@ test('short pops, missed or unreleased poses and incomplete rotations give disti
   for (let i = 0; i < 38; i++)
     step(success, { ...neutralInput, jump: true }, setup, [], tick)
   step(success, neutralInput, setup, [], tick)
+  for (let i = 0; i < 12 && success.air.phase === 'load'; i++)
+    step(success, neutralInput, setup, [], tick)
   assert.equal(summarize(success, setup).quality, 50)
 })
 

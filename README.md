@@ -21,7 +21,7 @@ Open **Run setup** to choose terrain, equipment, technique, and snow. **Start ru
 | P or Esc        | Pause or resume                                                        |
 | C or 1–5        | Cycle cameras or select chase, helmet, trackside, edge, or aerial      |
 | Drag, scroll, R | Orbit, zoom, or reset the selected external camera                     |
-| F               | Cycle the force, body, and contact layers                              |
+| F               | Cycle the force, body, contact, and muscle layers                              |
 | .               | Advance a paused run or demonstration by one physics frame             |
 | M or ?          | Toggle slope audio or open controls                                    |
 
@@ -97,6 +97,15 @@ Press **V** or tap the stance to pivot once on the snow. The base flattens as th
 - **Body** attaches joint markers to both hips, knees, and ankles. The highlighted center of mass moves with inclination, flexion, and tuck. The displayed knee angles are measured from the same two-link legs that drive the animation.
 - **Contact** shows two ski contact patches or two loading regions on one snowboard edge. Compare normal load, sliding resistance, estimated contact pressure, and the left/right ski or front/rear binding split.
 - **Skiing** and **Snowboarding** provide lesson phases, a drill, and a draggable 3D rider. Change speed and peak edge angle, link successive turns, or inspect the bindings in close-up. The terrain profile samples course elevation, local pitch, and the downhill component of gravity.
+
+### How muscles work
+
+Every lesson opens with **Muscle demand** selected on the 3D rider. Orbit to see the quadriceps and shins in front, the hamstrings and calves behind, or the hip adductors, gluteals, hip flexors, spinal extensors, obliques, and deltoids. **Muscle focus** can follow the movement or isolate a group. Each side has its own light, moderate, or high demand reading. Starting practice or a demo carries that view onto the mountain.
+
+- In a ski turn, select **Quadriceps**, play **Link turns**, and watch demand shift to the new outside leg. On a snowboard, compare the lower legs on a toe-edge and a heel-edge turn. [Ski turns](https://sloth-os.github.io/3D-Ski/#skiing/carve) · [Snowboard turns](https://sloth-os.github.io/3D-Ski/#snowboarding/boardCarve)
+- In a jump, compare **Preload**, **Takeoff**, **Maneuver**, and **Landing**. The rider lowers the hips, extends against the snow, draws the legs up, and bends progressively after touchdown. During a grab, one shoulder reaches toward the equipment and the other arm balances it. The snow-force moment falls to zero in flight while the limbs still move. [Straight air](https://sloth-os.github.io/3D-Ski/#skiing/straightAir) · [Indy grab](https://sloth-os.github.io/3D-Ski/#snowboarding/boardIndy)
+
+The frame inspector reports the magnitude of the snow reaction’s moment about each modeled knee flexion axis in N·m. It uses the vector from knee to contact and that foot’s share of the reaction. The educational muscle estimates also use flexion, edge engagement, trunk rotation, and arm reach. The colors describe relative demand in this rider. Estimating individual physiological activation requires additional measurements. [Berg and Eiken on alpine skiing](https://pubmed.ncbi.nlm.nih.gov/10416571/) · [Hirose and colleagues on snowboard turns](https://doi.org/10.1016/j.proeng.2012.04.129) · [DeVita and Skelly on landing](https://pubmed.ncbi.nlm.nih.gov/1548984/)
 
 ## Physics and research
 

@@ -15,7 +15,13 @@ import {
   gripFor,
   requiredSpin,
 } from './tricks.ts'
-import { trickPhase, bodyHeading, foreAftPress, shoulderLook } from './air.ts'
+import {
+  trickPhase,
+  bodyHeading,
+  foreAftPress,
+  shoulderLook,
+  pushProgress,
+} from './air.ts'
 import {
   courses,
   equipmentFor,
@@ -32,7 +38,8 @@ import {
   type Frame,
 } from './physics.ts'
 
-export type Lens = 'forces' | 'body' | 'contact'
+export const lenses = ['forces', 'body', 'contact', 'muscles'] as const
+export type Lens = (typeof lenses)[number]
 export type Point3 = [number, number, number]
 export const riderMass = 75
 export const gravity = 9.81
@@ -114,7 +121,9 @@ export function riderPose(f: Frame, setup: Setup) {
   const flex = clamp(
     f.flex +
       0.13 * Math.min(Math.abs(f.edge) / 45, 1) +
-      clamp((f.normalAccel - 9.4) * 0.025, -0.07, 0.11),
+      (f.air.phase === 'ready'
+        ? clamp((f.normalAccel - 9.4) * 0.025, -0.07, 0.11)
+        : 0),
     0.1,
     1,
   )
@@ -186,7 +195,7 @@ export function riderPose(f: Frame, setup: Setup) {
     pitch:
       -0.16 -
       f.tuck * 0.45 -
-      (board ? 0.13 : 0.03) * flex -
+      (board ? 0.2 : 0.15) * flex -
       (board ? 0.45 * grabAmount : 0),
     roll:
       -lean * 0.36 -
@@ -301,6 +310,53 @@ export function riderPose(f: Frame, setup: Setup) {
       elbow,
     }
   }
+  const arms = ([-1, 1] as const).map((side) => {
+    const plant =
+      board || f.safety || a.phase !== 'ready' || side !== f.lastSide
+        ? 0
+        : clamp(1 - (f.t - f.lastTurnTime) / 1.15, 0, 1)
+    const liftArm = 0.14 * (pushProgress(f) || (flying ? 1 - time : 0))
+    const swing =
+      0.038 * Math.sin(f.t * 2.05 + side * 1.6) * Math.min(1, f.speed / 6)
+    const counter = grip && grip.hand !== side ? grabAmount : 0
+    const shoulder = transformPoint(torso, [side * 0.218, 0.423, -0.03])
+    let elbow: Point3 = [
+      side * ((board ? 0.37 : 0.343) + 0.06 * counter) - lean * 0.047,
+      0.218 + 0.036 * f.tuck + 0.55 * liftArm + 0.09 * counter,
+      -0.048 + 0.055 * side * lean,
+    ]
+    let hand: Point3 = [
+      side * ((board ? 0.55 : 0.399) - 0.11 * f.tuck + 0.07 * counter) -
+        lean * 0.043 +
+        shifty * 0.11,
+      0.112 +
+        0.13 * f.tuck +
+        side * lean * 0.084 -
+        0.043 * plant +
+        liftArm +
+        0.17 * counter,
+      (board ? -0.126 : -0.258 - 0.135 * plant) +
+        swing +
+        side * shifty * 0.16 -
+        liftArm,
+    ]
+    hand = transformPoint(torso, mixPoint(hand, guardHand(side), guard))
+    elbow = transformPoint(torso, mixPoint(elbow, guardElbow(side), guard))
+    if (grab?.hand === side) {
+      hand = mixPoint(hand, grab.point, grab.weight)
+      elbow = mixPoint(elbow, grab.elbow, grab.weight)
+    }
+    const poleTip: Point3 = guard
+      ? [hand[0] + side * 0.32, Math.max(0.12, hand[1] - 0.18), hand[2] + 0.92]
+      : flying
+        ? [hand[0] + side * 0.135, hand[1] - 0.44, hand[2] + 0.78]
+        : [
+            hand[0] + side * (0.135 + 0.075 * plant),
+            0.055 + 0.09 * (1 - plant) + 0.028 * Math.sin(f.t * 2.05 + side),
+            hand[2] + 0.57 - 0.72 * plant,
+          ]
+    return { side, shoulder, elbow, hand, poleTip }
+  })
   // Vertical clearance over the local snow plane. Joint positions are in the slope-aligned rider frame.
   const comHeight = a.height + com[1] / Math.cos(f.pitch * radians)
   return {
@@ -315,6 +371,7 @@ export function riderPose(f: Frame, setup: Setup) {
     flex,
     lean,
     legs,
+    arms,
     outside,
     com,
     comHeight,
@@ -426,7 +483,7 @@ export function analyse(f: Frame, setup: Setup) {
 export type ForceState = ReturnType<typeof analyse>
 export type RiderPose = ReturnType<typeof riderPose>
 export function studyPoint(f: Frame, setup: Setup, p: RiderPose) {
-  if (!f.safety) return p.leadingEnd
+  if (!f.safety) return p.grab?.point ?? p.leadingEnd
   if (isFall(setup.technique))
     return contactOnBody(f.safety) > 0.2
       ? p.bodyContact
@@ -481,6 +538,8 @@ export function coachingCue(f: Frame, setup: Setup) {
     const a = f.air,
       id = setup.technique
     if (a.phase === 'load') {
+      if (a.pushElapsed >= 0)
+        return 'Extend through the hips and knees as the feet press against the snow.'
       if (!isSpin(id)) return 'Release the pop to take off.'
       const turn = requiredSpin(id, a.switch)
       const direction =

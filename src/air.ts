@@ -24,6 +24,8 @@ type Landing =
 export type AirState = {
   phase: Phase
   charge: number
+  pushElapsed: number
+  pushStartFlex: number
   elapsed: number
   duration: number
   height: number
@@ -54,6 +56,8 @@ export function initialAir(switched = false): AirState {
   return {
     phase: 'ready',
     charge: 0,
+    pushElapsed: -1,
+    pushStartFlex: 0,
     elapsed: 0,
     duration: 0,
     height: 0,
@@ -82,7 +86,40 @@ export function initialAir(switched = false): AirState {
   }
 }
 const compressionTime = 0.28
+const pushTime = 0.18
 const airDrag = 0.0072
+const smooth = (u: number) => u * u * (3 - 2 * u)
+const popSpeed = (id: string, charge: number) =>
+  (popEnd(id) ? 3.45 : 4.45) * (0.43 + 0.57 * charge)
+export function pushProgress(f: Frame) {
+  return f.air.phase === 'load' && f.air.pushElapsed >= 0
+    ? clamp(f.air.pushElapsed / pushTime, 0, 1)
+    : 0
+}
+// The normal component of the takeoff impulse is delivered while the feet still have support.
+export function pushSupport(f: Frame, id: string) {
+  const u = pushProgress(f)
+  return (
+    (6 *
+      u *
+      (1 - u) *
+      popSpeed(id, f.air.charge) *
+      Math.cos(f.pitch * radians)) /
+    pushTime
+  )
+}
+export function extensionFlex(f: Frame) {
+  return (
+    f.air.pushStartFlex + (0.21 - f.air.pushStartFlex) * smooth(pushProgress(f))
+  )
+}
+export function landingFlex(f: Frame) {
+  const u = clamp((f.t - f.air.landedAt) / compressionTime, 0, 1)
+  const depth = 0.4 + 0.46 * clamp(f.air.impact / 4.5, 0, 1)
+  return (
+    f.air.pushStartFlex + (depth - f.air.pushStartFlex) * (1 - (1 - u) ** 2)
+  )
+}
 export function landingSupport(f: Frame) {
   return f.air.phase === 'landing'
     ? ((2 * f.air.impact) / compressionTime) *
@@ -154,11 +191,11 @@ export function stepPivot(f: Frame, input: Input, dt: number) {
     f.lastSide = 0
   }
 }
-function launch(f: Frame, id: TrickId, course: Course, input: Input) {
+function launch(f: Frame, id: TrickId, course: Course) {
   const a = f.air,
     pitch = f.pitch * radians
-  const maxPop = popEnd(id) ? 3.45 : 4.45
-  const pop = maxPop * (0.43 + 0.57 * a.charge)
+  const maxPop = popSpeed(id, 1)
+  const pop = popSpeed(id, a.charge)
   const angle = spinDegrees(id) * radians
   // A weak-drag estimate sets the spin for a full pop on a planar slope.
   // Local terrain curvature and the player's charge change the actual time available.
@@ -173,8 +210,8 @@ function launch(f: Frame, id: TrickId, course: Course, input: Input) {
     hold: 0,
     spin: 0,
     startSwitch: a.switch,
-    direction: Math.sign(input.steer) || 1,
-    spinRate: Math.sign(input.steer) * turnRate,
+    direction: a.direction || 1,
+    spinRate: a.direction * turnRate,
     worldY: worldHeight(course, f.d, f.x),
     duration: (2 * pop) / 9.81,
     attempts: a.attempts + 1,
@@ -217,7 +254,7 @@ function land(f: Frame, id: TrickId) {
   a.points += a.award
   f.points += a.award
   f.normalAccel = 9.81 * Math.cos(f.pitch * radians) + landingSupport(f)
-  f.flex = 0.89
+  a.pushStartFlex = f.flex
   f.load = 50
   f.quality = Math.round((100 * a.landed) / a.attempts)
 }
@@ -309,10 +346,20 @@ export function stepAir(
   if (a.phase === 'ready' && input.jump && !f.pivot) {
     a.phase = 'load'
     a.charge = 0
+    a.pushElapsed = -1
   }
   if (a.phase === 'load') {
-    if (input.jump) a.charge = clamp(a.charge + dt / 0.55, 0, 1)
-    else launch(f, id, course, input)
+    if (a.pushElapsed < 0 && input.jump)
+      a.charge = clamp(a.charge + dt / 0.55, 0, 1)
+    else {
+      if (a.pushElapsed < 0) {
+        a.pushElapsed = 0
+        a.pushStartFlex = f.flex
+        a.direction = Math.sign(input.steer)
+      }
+      a.pushElapsed += dt
+      if (a.pushElapsed >= pushTime) launch(f, id, course)
+    }
   }
   if (a.phase !== 'flight') return false
   fly(f, id, course, input, dt)
@@ -329,7 +376,7 @@ export function trickDemoControls(f: Frame, id: TrickId, steer: number) {
       f.air.elapsed > 0.055 &&
       f.air.elapsed < f.air.duration * 0.67,
     steer:
-      isSpin(id) && f.air.phase === 'load' && !jump
+      isSpin(id) && f.air.phase === 'load' && f.air.pushElapsed < 0 && !jump
         ? requiredSpin(id, f.air.switch) || (f.air.attempts % 2 ? -1 : 1)
         : steer,
   }

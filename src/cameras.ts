@@ -25,6 +25,7 @@ export type CameraMode = (typeof cameras)[number]['id']
 export const nextCamera = (current: CameraMode) =>
   cameras[(cameras.findIndex((c) => c.id === current) + 1) % cameras.length].id
 
+import type { MuscleFocus, MuscleWork } from './muscles.ts'
 import type { Point3, Lens } from './analysis.ts'
 import { bodyHeading, shoulderLook, boardHeadYaw } from './air.ts'
 import { clamp, radians, type Frame } from './physics.ts'
@@ -34,6 +35,7 @@ export type ViewOptions = {
   line: boolean
   forces: boolean
   lens: Lens
+  muscle?: MuscleFocus
   orbit: number
   tilt: number
   zoom: number
@@ -42,6 +44,7 @@ export type ViewOptions = {
 }
 export type ScreenPoint = { x: number; y: number; visible: boolean }
 export type Projection = {
+  muscles?: MuscleWork
   studyPoint: ScreenPoint
   upper: ScreenPoint
   lower: ScreenPoint

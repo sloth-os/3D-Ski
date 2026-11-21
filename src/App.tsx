@@ -20,7 +20,8 @@ import {
   VolumeX,
 } from 'lucide-react'
 import { cameras, nextCamera, type CameraMode } from './cameras.ts'
-import { coachingCue, type Lens } from './analysis.ts'
+import { type MuscleFocus } from './muscles.ts'
+import { coachingCue, lenses, type Lens } from './analysis.ts'
 import {
   courses,
   techniques,
@@ -95,7 +96,8 @@ export default function App() {
       () => resolveLesson(location.hash, setup.technique) ?? setup.technique,
     ),
     [camera, setCamera] = useState<CameraMode>('chase'),
-    [lens, setLens] = useState<Lens>('forces')
+    [lens, setLens] = useState<Lens>('forces'),
+    [muscle, setMuscle] = useState<MuscleFocus>('auto')
   const [resetView, reset] = useState(0),
     [full, setFull] = useState(false),
     [saved, setSaved] = useState(true),
@@ -166,7 +168,15 @@ export default function App() {
     reset((n) => n + 1)
     close()
   }
-  function practice(id: TechniqueId, demo = false, stopEdge = setup.stopEdge) {
+  function practice(
+    id: TechniqueId,
+    demo: boolean,
+    stopEdge: Setup['stopEdge'],
+    studyLens: Lens,
+    focus: MuscleFocus,
+  ) {
+    changeLens(studyLens)
+    setMuscle(focus)
     const chosen = { ...setup, technique: id, stopEdge }
     configure(chosen)
     start(demo, chosen)
@@ -297,9 +307,7 @@ export default function App() {
     if (/^Digit[1-5]$/.test(e.code))
       setCamera(cameras[Number(e.code.slice(-1)) - 1].id)
     if (e.code === 'KeyF')
-      changeLens(
-        lens === 'forces' ? 'body' : lens === 'body' ? 'contact' : 'forces',
-      )
+      changeLens(lenses[(lenses.indexOf(lens) + 1) % lenses.length])
     if (e.code === 'Period' && paused) {
       e.preventDefault()
       run.singleStep()
@@ -336,6 +344,7 @@ export default function App() {
         prefs={prefs}
         camera={camera}
         lens={lens}
+        muscle={muscle}
         resetView={resetView}
         compassRef={compassRef}
         blocked={!!dialog || !!review}
@@ -483,7 +492,9 @@ export default function App() {
         frame={f}
         prefs={prefs}
         lens={lens}
+        muscle={muscle}
         setLens={changeLens}
+        setMuscle={setMuscle}
         toggle={() => setPrefs((p) => ({ ...p, forces: !p.forces }))}
         details={() => open('analysis')}
       />

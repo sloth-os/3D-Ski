@@ -196,7 +196,7 @@ export function makeLens(scene: THREE.Scene) {
           forearm(elbow.position, grip.position)
           lower.copy(grip.position)
         }
-      } else {
+      } else if (lens === 'contact') {
         for (let i = 0; i < 2; i++) {
           const pos = point(scratch, p.legs[i].contact)
           const load = a.contacts[i],

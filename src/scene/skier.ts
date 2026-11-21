@@ -1,8 +1,7 @@
-import { guardHand, guardElbow, mixPoint } from '../analysis.ts'
 import * as THREE from 'three'
 import { shoulderLook, boardHeadYaw } from '../air.ts'
 import { equipmentFor, type Setup } from '../course.ts'
-import { clamp, type Frame } from '../physics.ts'
+import { type Frame } from '../physics.ts'
 import { type RiderPose, type Point3 } from '../analysis.ts'
 import { makeDeck } from './equipment.ts'
 
@@ -55,9 +54,11 @@ export function skierModel(setup: Setup) {
     upper = new THREE.Group(),
     hips = new THREE.Group(),
     head = new THREE.Group(),
-    legGroup = new THREE.Group()
-  root.add(upper, hips, legGroup)
-  upper.add(head)
+    legGroup = new THREE.Group(),
+    arms = new THREE.Group(),
+    shell = new THREE.Group()
+  root.add(upper, hips, legGroup, arms)
+  upper.add(head, shell)
   const mat = (color: number, roughness = 0.77, metalness = 0) =>
     new THREE.MeshStandardMaterial({ color, roughness, metalness })
   const orange = mat(0xe56b2a),
@@ -114,6 +115,7 @@ export function skierModel(setup: Setup) {
     parent.add(mesh)
     return mesh
   }
+  const suit = mat(0x607884)
   function link(
     parent: THREE.Group,
     material: THREE.Material,
@@ -140,16 +142,17 @@ export function skierModel(setup: Setup) {
     const mesh = loft(parent, material, rings, 0.94),
       a = new THREE.Vector3(),
       b = new THREE.Vector3()
-    return (from: Point3, to: Point3) => {
+    return (from: Point3, to: Point3, girth = 1) => {
       a.fromArray(from)
       b.fromArray(to).sub(a)
       mesh.position.copy(a)
-      mesh.scale.y = b.length()
+      mesh.material = girth < 1 ? suit : material
+      mesh.scale.set(girth, b.length(), 0.94 * girth)
       mesh.quaternion.setFromUnitVectors(up, b.normalize())
     }
   }
   const jacket = loft(
-    upper,
+    shell,
     fabric,
     [
       [-0.062, 0.177],
@@ -169,26 +172,30 @@ export function skierModel(setup: Setup) {
     0.733,
   )
   jacket.rotation.x = -0.09
-  bulb(upper, seam, [0, 0.475, 0.05], [0.173, 0.113, 0.14])
-  bulb(upper, orange, [0, 0.505, 0.056], [0.169, 0.111, 0.134])
-  bulb(hips, pants, [0, -0.005, 0.024], [0.205, 0.133, 0.14])
+  const undersuit = new THREE.Mesh(jacket.geometry, suit)
+  undersuit.scale.set(0.79, 1, 0.54)
+  undersuit.rotation.copy(jacket.rotation)
+  upper.add(undersuit)
+  bulb(shell, seam, [0, 0.475, 0.05], [0.173, 0.113, 0.14])
+  bulb(shell, orange, [0, 0.505, 0.056], [0.169, 0.111, 0.134])
+  const pelvis = bulb(hips, pants, [0, -0.005, 0.024], [0.205, 0.133, 0.14])
   // The back panel, structured shoulder straps, webbing and buckles stay attached to the torso.
   const pack = new THREE.Group()
-  upper.add(pack)
+  shell.add(pack)
   pack.position.set(0, 0.27, 0.136)
   pack.rotation.x = -0.14
   bulb(pack, mat(0x26332f), [0, 0, 0.029], [0.147, 0.214, 0.073])
   bulb(pack, mat(0x374337), [0, -0.02, 0.06], [0.128, 0.164, 0.057])
   for (const side of [-1, 1]) {
     const strap = bulb(
-      upper,
+      shell,
       mat(0x313b37),
       [side * 0.161, 0.325, 0.109],
       [0.024, 0.18, 0.031],
     )
     strap.rotation.z = side * 0.13
     const front = bulb(
-      upper,
+      shell,
       sole,
       [side * 0.146, 0.318, -0.132],
       [0.024, 0.174, 0.023],
@@ -254,16 +261,11 @@ export function skierModel(setup: Setup) {
     const shin = link(legGroup, pants, 0.079, 0.119),
       thigh = link(legGroup, pants, 0.122, 0.142)
     const knee = bulb(legGroup, kneepad, [0, 0, 0], [0.115, 0.112, 0.116])
-    const shoulder = bulb(
-      upper,
-      orange,
-      [side * 0.222, 0.406, -0.03],
-      [0.106, 0.102, 0.101],
-    )
-    const bicep = link(upper, fabric, 0.103, 0.086),
-      forearm = link(upper, sleeve, 0.088, 0.061),
-      elbow = bulb(upper, sleeve, [0, 0, 0], [0.084, 0.087, 0.084]),
-      glove = bulb(upper, sole, [0, 0, 0], [0.067, 0.088, 0.07])
+    bulb(shell, orange, [side * 0.222, 0.406, -0.03], [0.106, 0.102, 0.101])
+    const bicep = link(arms, fabric, 0.103, 0.086),
+      forearm = link(arms, sleeve, 0.088, 0.061),
+      elbow = bulb(arms, sleeve, [0, 0, 0], [0.084, 0.087, 0.084]),
+      glove = bulb(arms, sole, [0, 0, 0], [0.067, 0.088, 0.07])
     const pole = !board ? link(root, metal, 0.009, 0.006, false) : null
     const basket = !board
       ? bulb(root, sole, [0, 0, 0], [0.048, 0.01, 0.047])
@@ -274,7 +276,6 @@ export function skierModel(setup: Setup) {
       shin,
       thigh,
       knee,
-      shoulder,
       bicep,
       forearm,
       elbow,
@@ -283,17 +284,15 @@ export function skierModel(setup: Setup) {
       basket,
     }
   })
-  const handPoint = new THREE.Vector3(),
-    rootInv = new THREE.Matrix4()
-  function pose(f: Frame, p: RiderPose, first: boolean) {
-    upper.visible = hips.visible = legGroup.visible = !first
+  function pose(f: Frame, p: RiderPose, first: boolean, anatomy: boolean) {
+    upper.visible = hips.visible = legGroup.visible = arms.visible = !first
+    shell.visible = !anatomy
+    undersuit.visible = anatomy
+    pelvis.material = anatomy ? suit : pants
+    hips.scale.set(anatomy ? 0.82 : 1, anatomy ? 0.88 : 1, anatomy ? 0.78 : 1)
     upper.position.fromArray(p.base)
     hips.position.fromArray(p.base)
-    const yaw =
-      p.torso.yaw +
-      (board ? 0 : 0.035 * Math.sin(f.t * 1.7) * Math.min(1, f.speed / 5))
-    upper.rotation.order = 'YXZ'
-    upper.rotation.set(p.torso.pitch, yaw, p.torso.roll)
+    upper.rotation.set(p.torso.pitch, p.torso.yaw, p.torso.roll, 'YXZ')
     hips.rotation.set(0, p.hipYaw, -p.lean * 0.13)
     head.rotation.set(
       0.085 + 0.18 * f.tuck - 0.56 * p.guard,
@@ -310,11 +309,9 @@ export function skierModel(setup: Setup) {
       sharedBoard.position.fromArray(deck.origin)
       sharedBoard.rotation.set(deck.pitch, deck.yaw, deck.roll, 'YXZ')
     }
-    upper.updateWorldMatrix(true, false)
-    rootInv.copy(root.matrixWorld).invert()
     limbs.forEach((l, i) => {
-      const side = l.side,
-        leg = p.legs[i]
+      const leg = p.legs[i],
+        arm = p.arms[i]
       if (!board) {
         l.platform.position.fromArray(leg.deck.origin)
         l.platform.rotation.set(
@@ -324,71 +321,19 @@ export function skierModel(setup: Setup) {
           'YXZ',
         )
       }
-      l.shin(leg.ankle, leg.knee)
-      l.thigh(leg.knee, leg.hip)
+      l.shin(leg.ankle, leg.knee, anatomy ? 0.56 : 1)
+      l.thigh(leg.knee, leg.hip, anatomy ? 0.58 : 1)
+      l.knee.scale.setScalar(anatomy ? 0.068 : 0.114)
       l.knee.position.fromArray(leg.knee)
-      const plant =
-        clamp((1.15 - (f.t - f.lastTurnTime)) / 1.15, 0, 1) *
-        (side === f.lastSide ? 1 : 0)
-      const swing =
-        0.038 * Math.sin(f.t * 2.05 + side * 1.6) * Math.min(1, f.speed / 6)
-      let elbow: Point3 = [
-        side * (board ? 0.37 : 0.343) - p.lean * 0.047,
-        0.218 + 0.036 * f.tuck,
-        -0.048 + 0.055 * side * p.lean,
-      ]
-      let hand: Point3 = [
-        side * ((board ? 0.55 : 0.399) - 0.11 * f.tuck) - p.lean * 0.043,
-        0.112 + 0.13 * f.tuck + side * p.lean * 0.084 - 0.043 * plant,
-        board ? -0.126 + swing : -0.258 - 0.135 * plant + swing,
-      ]
-      if (p.guard) {
-        hand = mixPoint(hand, guardHand(side), p.guard)
-        elbow = mixPoint(elbow, guardElbow(side), p.guard)
-      }
-      if (p.grab?.hand === side) {
-        const target = upper.worldToLocal(
-          handPoint.fromArray(p.grab.point).applyMatrix4(root.matrixWorld),
-        )
-        const weight = p.grab.weight
-        for (let axis = 0; axis < 3; axis++)
-          hand[axis] += (target.getComponent(axis) - hand[axis]) * weight
-        const bend = upper.worldToLocal(
-          handPoint.fromArray(p.grab.elbow).applyMatrix4(root.matrixWorld),
-        )
-        for (let axis = 0; axis < 3; axis++)
-          elbow[axis] += (bend.getComponent(axis) - elbow[axis]) * weight
-      }
-      if (p.shifty) {
-        hand[0] += p.shifty * 0.11
-        hand[2] += side * p.shifty * 0.16
-      }
-      l.bicep([side * 0.218, 0.423, -0.03], elbow)
-      l.forearm(elbow, hand)
-      l.elbow.position.fromArray(elbow)
-      l.glove.position.fromArray(hand)
+      l.bicep(arm.shoulder, arm.elbow, anatomy ? 0.68 : 1)
+      l.forearm(arm.elbow, arm.hand, anatomy ? 0.8 : 1)
+      l.elbow.material = anatomy ? suit : sleeve
+      l.elbow.position.fromArray(arm.elbow)
+      l.glove.position.fromArray(arm.hand)
       if (l.pole && l.basket) {
-        handPoint
-          .fromArray(hand)
-          .applyMatrix4(upper.matrixWorld)
-          .applyMatrix4(rootInv)
-        const h = handPoint.toArray() as Point3
-        const tip: Point3 = [
-          h[0] + side * (0.135 + 0.075 * plant),
-          0.055 + 0.09 * (1 - plant) + 0.028 * Math.sin(f.t * 2.05 + side),
-          h[2] + 0.57 - 0.72 * plant,
-        ]
-        if (p.guard) {
-          tip[0] = h[0] + side * 0.32
-          tip[1] = Math.max(0.12, h[1] - 0.18)
-          tip[2] = h[2] + 0.92
-        }
-        if (f.air.phase === 'flight') {
-          tip[1] = h[1] - 0.44
-          tip[2] = h[2] + 0.78
-        }
-        l.pole(h, tip)
-        l.basket.position.set(tip[0], tip[1] + 0.048, tip[2] - 0.022)
+        l.pole(arm.hand, arm.poleTip)
+        const [x, y, z] = arm.poleTip
+        l.basket.position.set(x, y + 0.048, z - 0.022)
       }
     })
   }

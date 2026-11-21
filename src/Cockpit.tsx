@@ -1,3 +1,12 @@
+import { MuscleReadout, MuscleEvidence } from './MuscleReadout.tsx'
+import {
+  effortBand,
+  effortNames,
+  muscleGroups,
+  muscleIds,
+  muscleWork,
+  type MuscleFocus,
+} from './muscles.ts'
 import { isSafety, isFall } from './safety.ts'
 import { lessonsFor, sportFor } from './library.ts'
 import { useMemo, useState } from 'react'
@@ -42,7 +51,7 @@ import {
 } from './tricks.ts'
 import { trickPhase } from './air.ts'
 import { cameras, type CameraMode } from './cameras.ts'
-import { analyse, riderPose, riderMass, type Lens } from './analysis.ts'
+import { analyse, riderPose, riderMass, lenses, type Lens } from './analysis.ts'
 import {
   courses,
   surfaces,
@@ -151,6 +160,8 @@ export function InstrumentPanel({
   prefs,
   lens,
   setLens,
+  muscle,
+  setMuscle,
   toggle,
   details,
 }: {
@@ -159,6 +170,8 @@ export function InstrumentPanel({
   prefs: Prefs
   lens: Lens
   setLens: (v: Lens) => void
+  muscle: MuscleFocus
+  setMuscle: (v: MuscleFocus) => void
   toggle: () => void
   details: () => void
 }) {
@@ -257,34 +270,49 @@ export function InstrumentPanel({
       {!compact && (
         <div className="console-content">
           <div className="lens-tabs" aria-label="Analysis layer">
-            {(['forces', 'body', 'contact'] as Lens[]).map((v) => (
+            {lenses.map((v) => (
               <button
                 key={v}
                 aria-pressed={v === lens}
                 onClick={() => setLens(v)}
               >
-                {v === 'forces' ? 'Forces' : v === 'body' ? 'Body' : 'Contact'}
+                {v.charAt(0).toUpperCase() + v.slice(1)}
               </button>
             ))}
           </div>
-          <div className="force-rows">
-            {rows.map((r) => (
-              <button
-                title="Inspect this frame"
-                key={r.label}
-                onClick={details}
-              >
-                <i className={r.tint}>
-                  <r.icon size={15} />
-                </i>
-                <span>{r.label}</span>
-                <b>
-                  {r.value}
-                  <small>{r.unit}</small>
-                </b>
+          {lens === 'muscles' ? (
+            <>
+              <MuscleReadout
+                work={muscleWork(frame, setup, p, a)}
+                focus={muscle}
+                change={setMuscle}
+                board={board}
+                switched={frame.air.switch}
+              />
+              <button className="muscle-inspect" onClick={details}>
+                Inspect this frame
               </button>
-            ))}
-          </div>
+            </>
+          ) : (
+            <div className="force-rows">
+              {rows.map((r) => (
+                <button
+                  title="Inspect this frame"
+                  key={r.label}
+                  onClick={details}
+                >
+                  <i className={r.tint}>
+                    <r.icon size={15} />
+                  </i>
+                  <span>{r.label}</span>
+                  <b>
+                    {r.value}
+                    <small>{r.unit}</small>
+                  </b>
+                </button>
+              ))}
+            </div>
+          )}
           <div
             className="load-split"
             data-airborne={frame.air.phase === 'flight'}
@@ -328,6 +356,7 @@ export function InstrumentPanel({
 export function FrameInspector({ f, setup }: { f: Frame; setup: Setup }) {
   const a = analyse(f, setup),
     p = riderPose(f, setup),
+    work = muscleWork(f, setup, p, a),
     board = equipmentFor(setup.technique) === 'snowboard'
   return (
     <div className="frame-inspector">
@@ -421,6 +450,34 @@ export function FrameInspector({ f, setup }: { f: Frame; setup: Setup }) {
           </div>
         ))}
       </div>
+      <table className="muscle-table">
+        <caption>Muscle demand · {work.phase}</caption>
+        <thead>
+          <tr>
+            <th>Group</th>
+            <th>Left</th>
+            <th>Right</th>
+          </tr>
+        </thead>
+        <tbody>
+          {muscleIds.map((id) => (
+            <tr key={id}>
+              <th>{muscleGroups[id][0]}</th>
+              {work.limbs.map((l, i) => (
+                <td key={i}>{effortNames[effortBand(l.levels[id])]}</td>
+              ))}
+            </tr>
+          ))}
+          <tr>
+            <th>Snow-force moment about knee</th>
+            {work.limbs.map((l, i) => (
+              <td key={i}>{Math.round(l.kneeMoment)} N·m</td>
+            ))}
+          </tr>
+        </tbody>
+      </table>
+      <p>{work.cue}</p>
+      <MuscleEvidence />
       <p>
         Joint angles come from the animated leg segments. Contact pressure uses
         an estimated contact area of {Math.round(a.area * 10000)} cm². These
@@ -837,8 +894,15 @@ export function TrickHUD({
       (a.phase === 'landing' || a.phase === 'ready') &&
       a.result &&
       f.t - a.landedAt < 1.8,
-    flight = a.phase === 'flight'
-  const caption = preview ? 'Reference jump' : landed ? a.result : trickPhase(f)
+    flight = a.phase === 'flight',
+    pushing = a.phase === 'load' && a.pushElapsed >= 0
+  const caption = preview
+    ? 'Reference jump'
+    : landed
+      ? a.result
+      : pushing
+        ? 'Push-off'
+        : trickPhase(f)
   const percent =
     a.phase === 'load'
       ? a.charge
@@ -887,12 +951,18 @@ export function TrickHUD({
       </div>
       <footer>
         <span className="key-hint">
-          {a.phase === 'load'
-            ? Math.round(a.charge * 100) + '% · Release J'
-            : 'J · Hold & release'}
+          {pushing
+            ? 'Extending legs'
+            : a.phase === 'load'
+              ? Math.round(a.charge * 100) + '% · Release J'
+              : 'J · Hold & release'}
         </span>
         <span className="touch-hint">
-          {a.phase === 'load' ? 'Release Pop' : 'Hold & release Pop'}
+          {pushing
+            ? 'Extending legs'
+            : a.phase === 'load'
+              ? 'Release Pop'
+              : 'Hold & release Pop'}
         </span>
         {action && (
           <>

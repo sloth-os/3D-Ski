@@ -1,6 +1,13 @@
 import { useEffect, useRef, type RefObject } from 'react'
 import { Flag } from 'lucide-react'
 import { courses, equipmentFor, type Setup } from './course.ts'
+import {
+  effortBand,
+  effortNames,
+  muscleGroups,
+  muscleWork,
+  type MuscleFocus,
+} from './muscles.ts'
 import { analyse, riderPose, type Lens } from './analysis.ts'
 import { clamp } from './physics.ts'
 import type { CameraMode, ScreenPoint, ViewOptions } from './cameras.ts'
@@ -70,6 +77,7 @@ type Props = {
   prefs: Prefs
   camera: CameraMode
   lens: Lens
+  muscle: MuscleFocus
   blocked: boolean
   compassRef: RefObject<HTMLCanvasElement | null>
   resetView: number
@@ -81,6 +89,7 @@ export function Viewport({
   prefs,
   camera,
   lens,
+  muscle,
   blocked,
   compassRef,
   resetView,
@@ -92,8 +101,15 @@ export function Viewport({
     gate = useRef<HTMLDivElement>(null)
   const hand = useRef({ orbit: 0, tilt: 0, zoom: 1 }),
     drag = useRef<{ id: number; x: number; y: number } | null>(null)
-  const config = useRef({ camera, lens, prefs, phase: run.phase, blocked })
-  config.current = { camera, lens, prefs, phase: run.phase, blocked }
+  const config = useRef({
+    camera,
+    lens,
+    muscle,
+    prefs,
+    phase: run.phase,
+    blocked,
+  })
+  config.current = { camera, lens, muscle, prefs, phase: run.phase, blocked }
   const { ready, current } = run
   useEffect(() => {
     hand.current = { orbit: 0, tilt: 0, zoom: 1 }
@@ -129,6 +145,7 @@ export function Viewport({
           const options: ViewOptions = {
             camera: cfg.camera,
             lens: cfg.lens,
+            muscle: cfg.muscle,
             forces: cfg.prefs.forces,
             line: cfg.prefs.line,
             ...hand.current,
@@ -182,8 +199,14 @@ export function Viewport({
     a = analyse(f, setup),
     p = riderPose(f, setup),
     board = equipmentFor(setup.technique) === 'snowboard'
-  const labels =
-    lens === 'forces'
+  const work = lens === 'muscles' ? muscleWork(f, setup, p, a) : null
+  const id = muscle === 'auto' ? (work?.primary ?? 'quads') : muscle
+  const labels = work
+    ? work.limbs.map((l, i) => [
+        (i ? 'Right ' : 'Left ') + muscleGroups[id][0].toLowerCase(),
+        effortNames[effortBand(l.levels[id])] + ' demand',
+      ])
+    : lens === 'forces'
       ? [
           f.air.phase === 'flight'
             ? ['Air drag', Math.round(a.dragN) + ' N']

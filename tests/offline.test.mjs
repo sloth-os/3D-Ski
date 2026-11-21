@@ -114,6 +114,17 @@ test(
     assert.match(await page.locator('.log-table').innerText(), /Pine Meadow/)
     assert.match(await page.locator('.log-table').innerText(), /Skidded turns/)
     await page.goto(url + '#ski-tricks/safetyGrab')
+    const lab = page.getByRole('dialog')
+    await lab
+      .locator('.muscle-readout[data-movement="Reaching for the grab"]')
+      .waitFor()
+    await lab.getByLabel('Muscle focus').selectOption('hamstrings')
+    await lab.locator('.muscle-pin').filter({ hasText: 'Hamstrings' }).waitFor()
+    await lab.getByRole('button', { name: 'Landing', exact: true }).tap()
+    await lab
+      .locator('.muscle-readout[data-movement="Landing absorption"]')
+      .waitFor()
+    await lab.getByRole('button', { name: 'Maneuver', exact: true }).tap()
     const offlineReplay = await page.reload()
     assert.ok(offlineReplay.fromServiceWorker())
     await page

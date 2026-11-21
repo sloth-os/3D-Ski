@@ -5,6 +5,8 @@ import {
   lessonsFor,
   type Sport,
 } from './library.ts'
+import type { Lens } from './analysis.ts'
+import type { MuscleFocus } from './muscles.ts'
 import { SafetyStudy } from './SafetyStudy.tsx'
 import { isSafety, isFall } from './safety.ts'
 import { SchemeTabs, SelectField } from './UI.tsx'
@@ -49,11 +51,16 @@ export function Lab({
   select: (id: TechniqueId) => void
   practice: (
     id: TechniqueId,
-    demo?: boolean,
-    stopEdge?: Setup['stopEdge'],
+    demo: boolean,
+    stopEdge: Setup['stopEdge'],
+    lens: Lens,
+    focus: MuscleFocus,
   ) => void
   units: Prefs['units']
 }) {
+  const [lens, setLens] = useState<Lens>('muscles'),
+    [focus, setFocus] = useState<MuscleFocus>('auto')
+  const view = { lens, setLens, focus, setFocus }
   const [angle, setAngle] = useState(32),
     [speed, setSpeed] = useState(28)
   const sport = sportFor(id),
@@ -73,7 +80,10 @@ export function Lab({
     a = f.lateralAccel
   const actions = (
     <div className="lesson-actions">
-      <button className="primary" onClick={() => practice(id, false, stopEdge)}>
+      <button
+        className="primary"
+        onClick={() => practice(id, false, stopEdge, lens, focus)}
+      >
         <Play size={16} fill="currentColor" />
         {isSafety(id)
           ? isFall(id)
@@ -88,7 +98,7 @@ export function Lab({
       </button>
       <button
         className="outline-btn"
-        onClick={() => practice(id, true, stopEdge)}
+        onClick={() => practice(id, true, stopEdge, lens, focus)}
       >
         Watch demo
       </button>
@@ -151,6 +161,7 @@ export function Lab({
         </section>
         {isSafety(id) ? (
           <SafetyStudy
+            view={view}
             setup={study}
             key={id + stopEdge}
             id={id}
@@ -158,9 +169,15 @@ export function Lab({
             edgeChange={setStopEdge}
           />
         ) : isTrick(id) ? (
-          <TrickStudy key={id} setup={study} id={id} units={units} />
+          <TrickStudy
+            view={view}
+            key={id}
+            setup={study}
+            id={id}
+            units={units}
+          />
         ) : isSwitchDrill(id) ? (
-          <SwitchStudy key={id} setup={study} id={id} />
+          <SwitchStudy view={view} key={id} setup={study} id={id} />
         ) : (
           <section className="panel experiment">
             <h2>
@@ -171,7 +188,7 @@ export function Lab({
               Set the speed and peak edge angle. Drag the rider to inspect the
               turn.
             </p>
-            <PoseStudy setup={study} angle={angle} speed={speed} />
+            <PoseStudy view={view} setup={study} angle={angle} speed={speed} />
             <div className="range-field">
               <label htmlFor="edge-range">
                 Edge angle <strong>{angle}°</strong>

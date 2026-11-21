@@ -1,9 +1,9 @@
 import { useReplay, ReplayControls } from './Replay.tsx'
 import { useMemo } from 'react'
 import { ExternalLink, Route } from 'lucide-react'
-import { PoseStudy } from './PoseStudy.tsx'
+import { PoseStudy, type StudyView } from './PoseStudy.tsx'
 import { trickReplay } from './trickReplay.ts'
-import { trickPhase } from './air.ts'
+import { trickPhase, pushProgress } from './air.ts'
 import { riderMass } from './analysis.ts'
 import { radians } from './physics.ts'
 import { tricks, isBoardTrick, type TrickId } from './tricks.ts'
@@ -11,10 +11,12 @@ import type { Setup } from './course.ts'
 import type { Prefs } from './storage.ts'
 
 export function TrickStudy({
+  view,
   setup,
   id,
   units,
 }: {
+  view: StudyView
   setup: Setup
   id: TrickId
   units: Prefs['units']
@@ -43,22 +45,38 @@ export function TrickStudy({
         Trick replay
       </h2>
       <div className="replay-scene">
-        <PoseStudy setup={setup} angle={0} speed={0} frame={f} trail={frames} />
+        <PoseStudy
+          view={view}
+          setup={setup}
+          angle={0}
+          speed={0}
+          frame={f}
+          trail={frames}
+        />
         <span className="replay-phase">{phase}</span>
       </div>
       <ReplayControls
         player={player}
-        phase={phase}
+        phase={a.phase === 'load' && a.pushElapsed < 0 ? 'Preload' : phase}
         playLabel="Play trick"
-        stops={['Approach', 'Takeoff', 'Maneuver', 'Landing'].map((name) => ({
-          name,
-          index:
-            name === 'Maneuver'
-              ? peak
-              : name === 'Takeoff'
-                ? frames.findIndex((s) => s.air.phase === 'flight') - 1
-                : frames.findIndex((s) => trickPhase(s) === name),
-        }))}
+        stops={[
+          { name: 'Approach', index: 0 },
+          {
+            name: 'Preload',
+            index: frames.findIndex(
+              (s) => s.air.phase === 'load' && s.air.charge >= 0.92,
+            ),
+          },
+          {
+            name: 'Takeoff',
+            index: frames.findIndex((s) => pushProgress(s) >= 0.48),
+          },
+          { name: 'Maneuver', index: peak },
+          {
+            name: 'Landing',
+            index: frames.findIndex((s) => s.air.phase === 'landing'),
+          },
+        ]}
       />
       <div className="experiment-stats">
         <div>

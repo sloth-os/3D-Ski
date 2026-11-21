@@ -56,6 +56,12 @@ test(
     await page.getByRole('link', { name: 'Snowboarding', exact: true }).click()
     await page.getByLabel('Lesson', { exact: true }).selectOption('boardCarve')
     await page.locator('.study-surface canvas[data-renderer="webgl"]').waitFor()
+    const lab = page.getByRole('dialog')
+    await lab
+      .locator('.muscle-readout[data-movement="Toe-edge support"]')
+      .waitFor()
+    await lab.getByLabel('Muscle focus').selectOption('calves')
+    await lab.locator('.muscle-pin').filter({ hasText: 'Calves' }).waitFor()
     await page.locator('#edge-range').fill('52')
     await page.locator('#speed-range').fill('40')
     await page.getByLabel('3D study layer').selectOption('contact')
@@ -82,10 +88,27 @@ test(
     await page.getByRole('button', { name: 'Step one frame' }).click()
     const increment = parseFloat(await clock.textContent()) - before
     assert.ok(increment >= 0.009 && increment <= 0.021)
+    await page.getByRole('button', { name: 'Muscles', exact: true }).click()
+    await page.locator('.force-console .muscle-readout').waitFor()
+    assert.equal(
+      await page
+        .locator('.force-console')
+        .getByLabel('Muscle focus')
+        .inputValue(),
+      'calves',
+    )
     await page.getByRole('button', { name: 'Body', exact: true }).click()
     await page.locator('.force-rows button').first().click()
     assert.match(await page.getByRole('dialog').innerText(), /Front knee/i)
-    assert.equal(await page.locator('.frame-inspector tbody tr').count(), 4)
+    assert.equal(
+      await page
+        .locator('.frame-inspector table')
+        .first()
+        .locator('tbody tr')
+        .count(),
+      4,
+    )
+    assert.equal(await page.locator('.muscle-table tbody tr').count(), 11)
     await page.getByRole('button', { name: 'Close dialog' }).click()
     await page.getByRole('button', { name: 'Stop demo' }).click()
     await page
@@ -111,6 +134,13 @@ test(
       .last()
       .locator('b')
     assert.equal(await normalLoad.textContent(), '0 N')
+    await lab
+      .locator('.muscle-readout[data-movement="Reaching for the grab"]')
+      .waitFor()
+    await lab.getByRole('button', { name: 'Preload', exact: true }).click()
+    await lab.locator('.muscle-readout[data-movement="Preload"]').waitFor()
+    await lab.getByRole('button', { name: 'Takeoff', exact: true }).click()
+    await lab.locator('.muscle-readout[data-movement="Push-off"]').waitFor()
     await page.getByRole('button', { name: 'Landing', exact: true }).click()
     assert.ok(parseFloat(await normalLoad.textContent()) > 750)
     await page.getByRole('button', { name: 'Rewind to approach' }).click()

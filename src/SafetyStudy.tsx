@@ -1,6 +1,6 @@
 import { useMemo } from 'react'
 import { Eye, ShieldCheck, ExternalLink } from 'lucide-react'
-import { PoseStudy } from './PoseStudy.tsx'
+import { PoseStudy, type StudyView } from './PoseStudy.tsx'
 import { ReplayControls, useReplay } from './Replay.tsx'
 import { safetyReplay } from './safetyReplay.ts'
 import {
@@ -20,11 +20,13 @@ const speedText = (v: number, units: Prefs['units']) =>
   (v * (units === 'metric' ? 3.6 : 2.23694)).toFixed(1) +
   (units === 'metric' ? ' km/h' : ' mph')
 export function SafetyStudy({
+  view,
   setup,
   id,
   units,
   edgeChange,
 }: {
+  view: StudyView
   setup: Setup
   id: SafetyId
   units: Prefs['units']
@@ -63,7 +65,7 @@ export function SafetyStudy({
         </label>
       )}
       <div className="replay-scene">
-        <PoseStudy setup={setup} frame={f} angle={0} speed={0} />
+        <PoseStudy view={view} setup={setup} frame={f} angle={0} speed={0} />
         <span className="replay-phase">{safetyPhases[s.phase]}</span>
       </div>
       <ReplayControls

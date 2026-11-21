@@ -28,6 +28,8 @@ import { skierModel } from './scene/skier.ts'
 import { addTerrain, pointAt, zAt } from './scene/terrain.ts'
 import { canvasMountain } from './scene/canvas.ts'
 import { makeSpray } from './scene/spray.ts'
+import { muscleWork, muscleBands, muscleCenter } from './muscles.ts'
+import { makeMuscles } from './scene/muscles.ts'
 import { makeLens } from './scene/lens.ts'
 
 export type MountainView = {
@@ -173,6 +175,8 @@ export function createMountain(
   sun.shadow.bias = -0.00028
   sun.shadow.normalBias = 0.009
   scene.add(sun, sun.target)
+  const fill = new THREE.DirectionalLight(0xdaefff, 1.75)
+  scene.add(fill, fill.target)
   const terrain = study
     ? makeStudyFloor(scene)
     : addTerrain(scene, c, setup, gates)
@@ -250,6 +254,7 @@ export function createMountain(
   scene.add(directionMark)
   const skier = skierModel(setup)
   scene.add(skier.root)
+  const muscles = makeMuscles(skier.root)
   const spray = makeSpray(setup.surface, board)
   scene.add(spray.points)
   const tracks = makeTracks(scene, c, board),
@@ -336,9 +341,27 @@ export function createMountain(
       )
       const pose = riderPose(f, setup),
         forces = analyse(f, setup)
-      skier.pose(f, pose, opt.camera === 'first')
+      const anatomy =
+        opt.lens === 'muscles' && opt.forces && opt.camera !== 'first'
+      muscles.mesh.visible = anatomy
+      skier.pose(f, pose, opt.camera === 'first', anatomy)
       skier.root.updateMatrixWorld(true)
       lens.update(skier.root, pose, forces, opt.lens, opt.forces, board)
+      let work
+      if (anatomy) {
+        work = muscleWork(f, setup, pose, forces)
+        const bands = muscleBands(pose),
+          focus = opt.muscle ?? 'auto'
+        muscles.draw(bands, work, focus)
+        const id = focus === 'auto' ? work.primary : focus
+        const pair = bands.filter((b) => b.id === id)
+        lens.upper
+          .fromArray(muscleCenter(pair[0]))
+          .applyMatrix4(skier.root.matrixWorld)
+        lens.lower
+          .fromArray(muscleCenter(pair[1]))
+          .applyMatrix4(skier.root.matrixWorld)
+      }
       tracks(f, !study && !plate)
       if (!study) spray.update(f, pos, pitch)
       sun.position.copy(pos).add(new THREE.Vector3(-12, 19, -8))
@@ -362,6 +385,13 @@ export function createMountain(
       }
       camera.lookAt(dest.copy(pos).add(target))
       camera.updateMatrixWorld()
+      fill.visible = anatomy || study
+      if (fill.visible) {
+        fill.position.copy(camera.position)
+        fill.position.y += 1.9
+        fill.target.position.copy(pos)
+        fill.target.position.y += f.air.height + 0.78
+      }
       renderer.render(scene, camera)
       const gate = isSafety(setup.technique) ? null : gates[f.gatesSeen],
         g = gate
@@ -370,6 +400,7 @@ export function createMountain(
       if (plate || !opt.line) g.visible = false
       camera.getWorldDirection(dest)
       return {
+        muscles: work,
         upper: project(lens.upper),
         studyPoint: project(
           aim

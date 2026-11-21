@@ -2,12 +2,14 @@ import { useState } from 'react'
 import { ExternalLink, RotateCcw } from 'lucide-react'
 import { equipmentFor, techniques, type Setup } from './course.ts'
 import { SchemeTabs } from './UI.tsx'
-import { PoseStudy } from './PoseStudy.tsx'
+import { PoseStudy, type StudyView } from './PoseStudy.tsx'
 
 export function SwitchStudy({
+  view,
   setup,
   id,
 }: {
+  view: StudyView
   setup: Setup
   id: 'boardSwitch' | 'skiSwitch'
 }) {
@@ -31,7 +33,13 @@ export function SwitchStudy({
         ]}
       />
       <div className="replay-scene">
-        <PoseStudy setup={setup} angle={edge} speed={24} switched={switched} />
+        <PoseStudy
+          view={view}
+          setup={setup}
+          angle={edge}
+          speed={24}
+          switched={switched}
+        />
       </div>
       <div className="range-field">
         <label htmlFor="switch-edge">

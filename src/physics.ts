@@ -18,6 +18,9 @@ import {
   stepPivot,
   stepAir,
   landingSupport,
+  landingFlex,
+  pushSupport,
+  extensionFlex,
   trickDemoControls,
   type AirState,
 } from './air.ts'
@@ -214,18 +217,20 @@ export function step(
   }
   f.tuck = approach(f.tuck, input.tuck && !input.brake ? 1 : 0, 4, dt)
   f.brake = approach(f.brake, input.brake ? 1 : f.pivot ? 0.32 : 0, 5, dt)
-  f.flex = approach(
-    f.flex,
-    f.air.phase === 'load'
-      ? 0.24 + 0.72 * f.air.charge
-      : f.air.phase === 'landing'
-        ? 0.82
+  if (f.air.phase === 'load' && f.air.pushElapsed >= 0)
+    f.flex = extensionFlex(f)
+  else if (f.air.phase === 'landing') f.flex = landingFlex(f)
+  else
+    f.flex = approach(
+      f.flex,
+      f.air.phase === 'load'
+        ? 0.24 + 0.72 * f.air.charge
         : input.flex
           ? 0.96
           : 0.2 + 0.38 * f.tuck,
-    5,
-    dt,
-  )
+      5,
+      dt,
+    )
   const wedge = setup.technique === 'wedge'
   const board = equipmentFor(setup.technique) === 'snowboard'
   const maxEdge = edgeLimit(setup)
@@ -271,7 +276,7 @@ export function step(
     2.5,
     21,
   )
-  f.normalAccel = normal + landingSupport(f)
+  f.normalAccel = normal + landingSupport(f) + pushSupport(f, setup.technique)
   const resistance =
     normal *
     (surface.friction +

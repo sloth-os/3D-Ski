@@ -261,5 +261,6 @@ export function useRun(
 export type TrainingRun = ReturnType<typeof useRun>
 
 export function cancelPop(f: Frame) {
-  if (f.air.phase === 'load') f.air = { ...f.air, phase: 'ready', charge: 0 }
+  if (f.air.phase === 'load' && f.air.pushElapsed < 0)
+    f.air = { ...f.air, phase: 'ready', charge: 0 }
 }

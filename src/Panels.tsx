@@ -80,7 +80,7 @@ export function Controls() {
     {
       keys: ['F'],
       name: 'Analysis layer',
-      text: 'Switch between external forces, body mechanics, and equipment contact.',
+      text: 'Cycle through forces, body joints, snow contact, and muscle demand.',
     },
     {
       keys: ['.'],
