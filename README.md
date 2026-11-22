@@ -29,13 +29,19 @@ On a touchscreen, hold **Pop** and lift your finger to jump. Keep a second finge
 
 ### Mountain and equipment
 
-| Terrain      | Mean pitch | Length | Gates |
-| ------------ | ---------- | ------ | ----- |
-| Pine Meadow  | 10°        | 380 m  | 8     |
-| Alpine Ridge | 18°        | 640 m  | 12    |
-| Glacier Bowl | 24°        | 780 m  | 16    |
+| Course | Difficulty | Mean pitch | Length | Gates | Training focus |
+| --- | --- | ---: | ---: | ---: | --- |
+| Pine Meadow | Beginner | 10° | 380 m | 8 | Link wide turns in a gentle forest clearing. |
+| [Larch Traverse](https://sloth-os.github.io/3D-Ski/#terrain/traverse) | Beginner | 12° | 440 m | 9 | Hold an edge across a sidehill, then change edges as the slope tilts the other way. |
+| [Roller Run](https://sloth-os.github.io/3D-Ski/#terrain/rollers) | Intermediate | 16° | 480 m | 11 | Flex over rounded crests and extend into the hollows as the spacing tightens. |
+| Alpine Ridge | Intermediate | 18° | 640 m | 12 | Link turns at a steady rhythm on a rolling piste. |
+| [Banked Gully](https://sloth-os.github.io/3D-Ski/#terrain/gully) | Intermediate | 19° | 560 m | 12 | Cross a winding channel and use each bank to support the next turn. |
+| [Mogul Garden](https://sloth-os.github.io/3D-Ski/#terrain/moguls) | Advanced | 21° | 390 m | 14 | Pick a line through staggered bumps and work the legs beneath a steady torso. |
+| Glacier Bowl | Advanced | 24° | 780 m | 16 | Make tighter turns through changing pitch in an exposed alpine bowl. |
 
-The three fictional Swiss courses have distinct gate spacing, elevation, forest density, and undulations. Groomed, powder, and icy snow change friction, effective grip, contact area, and spray. Choose parallel, carved, wedge, or short turns on skis. On a snowboard, choose edge-to-edge carves or skidded turns with fixed bindings, toe and heel edges, and sideslip. Use **Run setup → Starting stance** to begin an open practice forward or switch.
+The seven courses are fictional Swiss training runs. Open **Run setup → Scout terrain** and move the position slider along the gate line. On the traverse, rollers, gully, and moguls, select a named section to jump to its midpoint. Switch the snow relief view between **Across trail** and **Down course** to see the local shape with the mean slope removed. The dot marks the position on the gate line. Pitch and bank report the snow angles there. **Apply setup** takes the selected course onto the mountain, where trailside signs mark the transitions. Mogul technique cues draw on flexion, extension, and line choice. [REI, How to Ski Moguls](https://www.rei.com/learn/expert-advice/how-to-ski-moguls.html)
+
+Groomed, powder, and icy snow change friction, effective grip, contact area, and spray. Choose parallel, carved, wedge, or short turns on skis. On a snowboard, choose edge-to-edge carves or skidded turns with fixed bindings, toe and heel edges, and sideslip. Use **Run setup → Starting stance** to begin an open practice forward or switch.
 
 ### Stopping and falling
 
@@ -109,7 +115,7 @@ The frame inspector reports the magnitude of the snow reaction’s moment about 
 
 ## Physics and research
 
-The fixed 60 Hz model follows the terrain height field. It resolves gravity along the path, sliding resistance, braking, quadratic drag, edge engagement, and steering. Surface curvature changes the normal load. Speed and yaw rate determine the instantaneous path radius. The ideal-edge experiment uses sidecut geometry and lateral acceleration, with a peak radius of approximately `sidecut × cos(edge angle)` and peak acceleration of `speed² / radius`. [Physics of Skiing](https://www.real-world-physics-problems.com/physics-of-skiing.html)
+The fixed 60 Hz model follows the terrain height field. It resolves gravity along the path, sliding resistance, braking, quadratic drag, edge engagement, and steering. Local snow curvature changes the normal load. A rider crossing a roller at the same speed feels less support on a crest and more in a hollow. On the four sculpted courses the model also resolves gravity across the bank, so a flat ski or board on a gully wall drifts toward the floor. The reference rider reads upcoming rollers and moguls, retracting the legs over crests and extending into hollows. The game, force inspector, and terrain profile sample the same snow surface. Speed and yaw rate determine the instantaneous path radius. The ideal-edge experiment uses sidecut geometry and lateral acceleration, with a peak radius of approximately `sidecut × cos(edge angle)` and peak acceleration of `speed² / radius`. [Physics of Skiing](https://www.real-world-physics-problems.com/physics-of-skiing.html)
 
 The analysis assumes a 75 kg rider. Body pose, binding loads, and snow contact area are estimates from the model. Pressure, edging, rotation, and flexion cues draw on the alpine and snowboard fundamentals. [PSIA Alpine Certification Standards](https://thesnowpros.org/wp-content/uploads/2025/11/PSIA_Alpine_Standards100225v5.pdf) · [AASI Snowboard Certification Standards](https://thesnowpros.org/wp-content/uploads/2025/10/AASI_Snowboard_Standards0224_updated_100325_v3.pdf)
 
@@ -144,7 +150,7 @@ After the production app shows **Offline ready**, its service worker has cached 
 
 The GitHub Actions workflow runs on pushes to the default branch and manual dispatch. It runs the physics regressions, builds the production app, exercises the WebGL cockpit and disconnected PWA with Chromium, and deploys the resulting artifact. Repository Pages settings use **GitHub Actions** as the deployment source. Relative asset URLs and the scoped manifest and service worker support repository subpaths. [Publishing workflow](.github/workflows/pages.yml)
 
-The regression suite covers all 261 course, surface, and lesson combinations, including 45 stopping and falling replays with both snowboard stopping edges, and 306 freestyle replays across both starting stances. It checks force balance, grabs, binding attachment, toe and heel edges, surface pivots, switch landings, and scoring. To repeat the browser checks locally, first build the site and then run the following. An existing Chromium executable can be selected with `FALLLINE_CHROMIUM`.
+The regression suite covers all 609 course, surface, and lesson combinations, including 105 stopping and falling replays with both snowboard stopping edges, and 714 freestyle replays across both starting stances. It checks force balance, grabs, binding attachment, toe and heel edges, surface pivots, switch landings, and scoring. To repeat the browser checks locally, first build the site and then run the following. An existing Chromium executable can be selected with `FALLLINE_CHROMIUM`.
 
 ```sh
 npx playwright-core install --only-shell chromium

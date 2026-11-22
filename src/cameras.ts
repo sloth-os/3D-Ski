@@ -66,7 +66,7 @@ export function cameraShot(
   opt: ViewOptions,
   board = false,
 ): CameraShot {
-  const pitch = (f.pitch || c.pitch) * radians,
+  const pitch = (Number.isFinite(f.pitch) ? f.pitch : c.pitch) * radians,
     heading = f.heading,
     quiet = opt.reduced ? 0 : 1
   const lift = f.air.height

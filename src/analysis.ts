@@ -1,3 +1,4 @@
+import { bankAt, slopeAxes } from './slope.ts'
 import {
   contactOnBody,
   bodyGuard,
@@ -358,7 +359,9 @@ export function riderPose(f: Frame, setup: Setup) {
     return { side, shoulder, elbow, hand, poleTip }
   })
   // Vertical clearance over the local snow plane. Joint positions are in the slope-aligned rider frame.
-  const comHeight = a.height + com[1] / Math.cos(f.pitch * radians)
+  const comHeight =
+    a.height +
+    com[1] / (Math.cos(f.pitch * radians) * Math.cos(f.bank * radians))
   return {
     base,
     torso,
@@ -388,23 +391,11 @@ export function analyse(f: Frame, setup: Setup) {
   const board = equipmentFor(setup.technique) === 'snowboard',
     pitch = f.pitch * radians,
     h = f.forceHeading
-  const normal: Point3 = [0, Math.cos(pitch), -Math.sin(pitch)]
-  const forward: Point3 = [
-    Math.sin(h),
-    -Math.sin(pitch) * Math.cos(h),
-    -Math.cos(pitch) * Math.cos(h),
-  ]
-  const side: Point3 = [
-    Math.cos(h),
-    Math.sin(pitch) * Math.sin(h),
-    Math.cos(pitch) * Math.sin(h),
-  ]
+  const { normal, forward, side } = slopeAxes(pitch, f.bank * radians, h)
   const normalN = riderMass * f.normalAccel,
     frictionN = riderMass * f.frictionAccel
   const flying = f.air.phase === 'flight'
-  const lateralN = flying
-    ? 0
-    : riderMass * (f.lateralAccel + gravity * Math.sin(pitch) * Math.sin(h))
+  const lateralN = flying ? 0 : riderMass * (f.lateralAccel + gravity * side[1])
   const weight: Point3 = [0, -riderMass * gravity, 0]
   const drag = flying
     ? scale3(f.air.drag, riderMass)
@@ -510,12 +501,14 @@ export function idealTurn(
   f.lookSide = -Math.tanh(f.edge / 9)
   f.edgeRate = -1.2 * peak * Math.sin(phase)
   f.pitch = pitchAt(courses[setup.course], f.d) / radians
+  f.bank = bankAt(courses[setup.course], f.d, 0, f.pitch * radians) / radians
   const sidecutRadius =
     techniques[setup.technique].sidecut * Math.cos(f.edge * radians)
   f.radius =
     Math.abs(f.edge) > 1e-6 ? sidecutRadius / Math.abs(transfer) : Infinity
   f.lateralAccel = (Math.sign(f.edge) * speed ** 2) / f.radius
-  f.normalAccel = gravity * Math.cos(f.pitch * radians)
+  f.normalAccel =
+    gravity * Math.cos(f.pitch * radians) * Math.cos(f.bank * radians)
   f.lean = Math.atan2(f.lateralAccel, f.normalAccel)
   f.load = clamp(
     50 +

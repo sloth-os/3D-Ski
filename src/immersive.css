@@ -1031,11 +1031,31 @@ body {
   font-size: 12px;
 }
 .course-choices span {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
   font: 500 8px var(--mono);
   color: #dfebea;
 }
+.course-choices .slope-symbol {
+  width: 6px;
+  height: 6px;
+  flex-shrink: 0;
+}
+.slope-symbol.black {
+  background: #172026;
+  border: 1px solid #e2ebed;
+  transform: rotate(45deg);
+}
 .loadout .primary {
   justify-content: center;
+  position: sticky;
+  bottom: 0;
+  z-index: 2;
+  box-shadow: 0 3px 12px #10252cb5;
+}
+.modal:has(.loadout) {
+  scroll-padding-bottom: 58px;
 }
 .frame-inspector table {
   width: 100%;
@@ -2231,4 +2251,121 @@ body {
 }
 .frame-inspector .muscle-evidence {
   color: inherit;
+}
+
+.terrain-brief {
+  border-left: 2px solid var(--acid);
+  background: #20343b;
+  padding: 9px 12px;
+}
+.terrain-brief > div {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 4px 12px;
+}
+.terrain-brief > div strong {
+  font-size: 14px;
+}
+.terrain-brief small,
+.snow-section small {
+  color: #abc3c7;
+  font: 500 10px var(--mono);
+}
+.terrain-brief > p,
+.stage-cue {
+  font-size: 12px;
+  line-height: 1.4;
+  margin: 5px 0;
+}
+.scout-terrain summary {
+  font-size: 12px;
+  color: #cceba4;
+  cursor: pointer;
+  width: fit-content;
+}
+.scout-terrain .terrain-profile {
+  margin: 8px 0 2px;
+  background: transparent;
+  border: 0;
+  box-shadow: none;
+  padding: 0;
+}
+.scout-terrain .profile-heading {
+  display: none;
+}
+.stage-stops {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  margin-top: 8px;
+}
+.stage-stops button,
+.snow-section select {
+  color: #d0e0de;
+  font: 500 10px var(--mono);
+  border: 1px solid #527174;
+  border-radius: 4px;
+  padding: 4px 6px;
+  background: #1b3038;
+}
+.stage-stops button[aria-pressed='true'] {
+  background: #344a37;
+  color: #def4bc;
+  border-color: #a0c27e;
+}
+.snow-section {
+  margin: 9px 0 5px;
+  padding: 8px 9px;
+  background: #132830;
+  border-radius: 5px;
+}
+.snow-section figcaption,
+.snow-section small {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 4px;
+}
+.snow-section figcaption {
+  color: #dbe9e8;
+  font-size: 12px;
+  font-weight: 600;
+}
+.snow-section svg {
+  display: block;
+  width: 100%;
+  height: auto;
+}
+.snow-section small {
+  font-size: 9px;
+}
+.terrain-stats:has(> div:nth-child(4)) {
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+}
+.terrain-stats small {
+  display: block;
+  font-size: 9px;
+  color: #abc3c7;
+}
+@media (max-width: 600px) {
+  .stage-stops button,
+  .snow-section select {
+    min-height: 32px;
+  }
+  .course-choices button {
+    min-height: 69px;
+    padding: 6px;
+  }
+  .course-choices button[aria-pressed='true'] {
+    padding: 5px;
+  }
+  .course-choices strong {
+    font-size: 11px;
+    line-height: 1.1;
+  }
+  .terrain-stats:has(> div:nth-child(4)) {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
 }

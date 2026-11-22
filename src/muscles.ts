@@ -217,10 +217,13 @@ function riderReaction(f: Frame, a: ForceState): Point3 {
     pitch = f.pitch * radians,
     yaw = f.heading + f.boardYaw + bodyHeading(f)
   const levelZ = y * Math.sin(pitch) + z * Math.cos(pitch)
+  const levelY = y * Math.cos(pitch) - z * Math.sin(pitch),
+    bank = f.bank * radians
+  const right = x * Math.cos(bank) + levelY * Math.sin(bank)
   return [
-    x * Math.cos(yaw) + levelZ * Math.sin(yaw),
-    y * Math.cos(pitch) - z * Math.sin(pitch),
-    -x * Math.sin(yaw) + levelZ * Math.cos(yaw),
+    right * Math.cos(yaw) + levelZ * Math.sin(yaw),
+    -x * Math.sin(bank) + levelY * Math.cos(bank),
+    -right * Math.sin(yaw) + levelZ * Math.cos(yaw),
   ]
 }
 export function muscleWork(

@@ -84,10 +84,17 @@ export const duration = (n: number) =>
     .padStart(2, '0') +
   ':' +
   (Math.floor(n) % 60).toString().padStart(2, '0')
-export function lengthText(metres: number, units: Prefs['units']) {
-  return units === 'imperial'
-    ? Math.round(metres * 3.28084).toLocaleString() + ' ft'
-    : Math.round(metres).toLocaleString() + ' m'
+export function lengthText(
+  metres: number,
+  units: Prefs['units'],
+  fractionDigits = 0,
+) {
+  const imperial = units === 'imperial'
+  const value = imperial ? metres * 3.28084 : metres
+  const number = fractionDigits
+    ? value.toFixed(fractionDigits)
+    : Math.round(value).toLocaleString()
+  return number + (imperial ? ' ft' : ' m')
 }
 
 export async function appendRun(run: Run, previous: Run[]) {

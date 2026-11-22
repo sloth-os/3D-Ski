@@ -1,3 +1,5 @@
+import { canvasSnowfield } from './canvasTerrain.ts'
+import { courseStages } from '../terrainGuide.ts'
 import {
   muscleWork,
   muscleBands,
@@ -60,12 +62,17 @@ export function canvasMountain(
   const tree = new Image()
   tree.src = import.meta.env.BASE_URL + 'images/spruce.webp'
   const pano = new Image()
-  pano.src = import.meta.env.BASE_URL + 'images/glacier-bowl.webp'
+  pano.src =
+    import.meta.env.BASE_URL +
+    (setup.course === 'ridge' ? 'images/glacier-bowl.webp' : course.image)
   const at = (x: number, d: number, y = 0): Point3 => [
     x,
     worldHeight(course, d, x) + y,
     -d * Math.cos(course.pitch * radians),
   ]
+  const relief =
+    !study && course.form !== 'piste' ? canvasSnowfield(course, at) : null
+  const stages = courseStages(course).slice(1)
   const arc = replay
     ?.filter((s) => s.air.phase === 'flight')
     .map((s) => at(s.x, s.d, s.air.height + 0.045))
@@ -88,7 +95,15 @@ export function canvasMountain(
       const shot = cameraShot(f, course, opt, board),
         pos = at(f.x, f.d),
         eye = add3(shot.eye, pos)
-      const fw = unit(sub(shot.target, shot.eye)),
+      eye[1] = Math.max(
+        eye[1],
+        worldHeight(
+          course,
+          -eye[2] / Math.cos(course.pitch * radians),
+          eye[0],
+        ) + 0.14,
+      )
+      const fw = unit(sub(add3(shot.target, pos), eye)),
         right = unit(cross(fw, [0, 1, 0])),
         up = unit(cross(right, fw)),
         focal = (0.5 * h) / Math.tan((shot.fov * radians) / 2)
@@ -153,15 +168,17 @@ export function canvasMountain(
         }
         return end
       }
-      const pitch = (f.pitch || course.pitch) * radians,
+      const pitch = f.pitch * radians,
+        bank = f.bank * radians,
         yaw = -f.heading - f.boardYaw - bodyHeading(f)
       function local(p: Point3): Point3 {
         const x = p[0] * Math.cos(yaw) + p[2] * Math.sin(yaw),
           z = -p[0] * Math.sin(yaw) + p[2] * Math.cos(yaw)
+        const y = x * Math.sin(bank) + p[1] * Math.cos(bank)
         return add3(pos, [
-          x,
-          p[1] * Math.cos(pitch) + z * Math.sin(pitch) + f.air.height,
-          -p[1] * Math.sin(pitch) + z * Math.cos(pitch),
+          x * Math.cos(bank) - p[1] * Math.sin(bank),
+          y * Math.cos(pitch) + z * Math.sin(pitch) + f.air.height,
+          -y * Math.sin(pitch) + z * Math.cos(pitch),
         ])
       }
       if (study) {
@@ -181,7 +198,8 @@ export function canvasMountain(
         ctx.fillRect(0, 0, w, h)
         if (pano.complete && pano.naturalWidth)
           ctx.drawImage(pano, 0, 0, w, h * 0.67)
-        const normal: Point3 = [0, Math.cos(pitch), -Math.sin(pitch)]
+        const basePitch = relief ? course.pitch * radians : pitch
+        const normal: Point3 = [0, Math.cos(basePitch), -Math.sin(basePitch)]
         const horizon = (x: number) =>
           h * 0.5 +
           (focal * dot(normal, fw) + (x - w * 0.5) * dot(normal, right)) /
@@ -196,6 +214,7 @@ export function canvasMountain(
         ctx.lineTo(w, h)
         ctx.lineTo(0, h)
         ctx.fill()
+        relief?.(ctx, project, f.d)
         if (f.d < lastDistance) {
           lastDistance = -1
           tracks.forEach((track) => (track.length = 0))
@@ -224,10 +243,19 @@ export function canvasMountain(
           }
         })
         const objects: { depth: number; draw: () => void }[] = []
+        const treeSpacing =
+          course.scenery === 'alpine'
+            ? 22
+            : course.scenery === 'treeline'
+              ? 8
+              : 6
         for (
-          let d = Math.max(-32, Math.floor((f.d - 55) / 6) * 6);
+          let d = Math.max(
+            -32,
+            Math.floor((f.d - 55) / treeSpacing) * treeSpacing,
+          );
           d < Math.min(course.length + 50, f.d + 190);
-          d += 6
+          d += treeSpacing
         ) {
           for (const s of [-1, 1]) {
             const x =
@@ -272,6 +300,34 @@ export function canvasMountain(
               })
             }
           })
+        if (!isSafety(setup.technique))
+          for (const stage of stages) {
+            const base = at(-16, stage.d),
+              top = at(-16, stage.d, 2.46),
+              v = project(top)
+            if (v.depth < 1 || v.depth > 130) continue
+            objects.push({
+              depth: v.depth,
+              draw: () => {
+                stroke(base, top, '#69584b', 0.15)
+                ctx.fillStyle = '#1a393b'
+                ctx.fillRect(
+                  v.x - 2.2 * v.k,
+                  v.y - 0.54 * v.k,
+                  4.4 * v.k,
+                  1.08 * v.k,
+                )
+                if (v.k > 7) {
+                  ctx.save()
+                  ctx.fillStyle = '#d1ebb6'
+                  ctx.font = 'bold ' + 0.35 * v.k + 'px sans-serif'
+                  ctx.textAlign = 'center'
+                  ctx.fillText(stage.name, v.x, v.y + 0.13 * v.k, 4 * v.k)
+                  ctx.restore()
+                }
+              },
+            })
+          }
         objects.sort((a, b) => b.depth - a.depth).forEach((o) => o.draw())
         if (isSafety(setup.technique)) {
           for (let i = -8; i < 8; i++)

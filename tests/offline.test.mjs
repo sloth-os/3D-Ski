@@ -57,10 +57,40 @@ test(
     assert.ok(response.fromServiceWorker())
     for (const [id, file] of [
       ['bowl', 'glacier-bowl.webp'],
+      ['traverse', 'larch-traverse.webp'],
+      ['rollers', 'roller-run.webp'],
+      ['gully', 'banked-gully.webp'],
+      ['moguls', 'mogul-garden.webp'],
       ['meadow', 'pine-meadow.webp'],
     ]) {
       await page.getByRole('button', { name: 'Run setup', exact: true }).click()
       await page.locator('[data-course="' + id + '"]').click()
+      if (id === 'moguls') {
+        await page.goto(url + '#terrain/moguls')
+        assert.ok((await page.reload()).fromServiceWorker())
+        assert.equal(
+          await page
+            .locator('[data-course="moguls"]')
+            .getAttribute('aria-pressed'),
+          'true',
+        )
+        await page.getByText('Scout terrain', { exact: true }).click()
+        const scout = page.locator('.scout-terrain')
+        await scout.getByRole('button', { name: 'Taller bumps' }).click()
+        assert.match(await scout.locator('.stage-cue').innerText(), /troughs/)
+        await scout.getByLabel('Snow relief direction').selectOption('across')
+        await scout
+          .getByRole('img', {
+            name: /Mogul Garden snow relief across the trail/,
+          })
+          .waitFor()
+        assert.ok(
+          await scout
+            .locator('.terrain-stats')
+            .getByText('Bank', { exact: true })
+            .isVisible(),
+        )
+      }
       if (id === 'meadow') {
         await page
           .getByRole('button', { name: 'Snowboard', exact: true })

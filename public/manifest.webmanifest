@@ -2,7 +2,7 @@
   "id": "./",
   "name": "Fallline Alpine Simulator",
   "short_name": "Fallline",
-  "description": "Practice ski and snowboard turns, tricks, stops and falls with 3D muscle, joint and force analysis on offline courses.",
+  "description": "Ski and snowboard on seven offline courses, from gentle traverses to staggered moguls. Practice turns and tricks with 3D muscle and force analysis.",
   "lang": "en",
   "start_url": "./",
   "scope": "./",

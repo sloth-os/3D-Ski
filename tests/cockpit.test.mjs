@@ -31,7 +31,8 @@ test(
     page.on('console', (message) => {
       if (message.type() === 'error') errors.push(message.text())
     })
-    await page.goto('http://127.0.0.1:' + host.httpServer.address().port + '/')
+    const url = 'http://127.0.0.1:' + host.httpServer.address().port + '/'
+    await page.goto(url)
     const world = page.locator('.mountain-canvas canvas[data-renderer="webgl"]')
     await world.waitFor()
     const camera = page.getByRole('combobox', { name: 'Camera view' })
@@ -203,6 +204,47 @@ test(
     assert.equal(saved.freestyle.attempts, 1)
     assert.equal(saved.freestyle.landed, 1)
     assert.equal(saved.freestyle.points, 190)
+    await page.goto(url + '#terrain/gully')
+    const loadout = page.getByRole('dialog', { name: 'Run setup' })
+    assert.equal(await loadout.locator('[data-course]').count(), 7)
+    assert.equal(
+      await loadout
+        .locator('[data-course="gully"]')
+        .getAttribute('aria-pressed'),
+      'true',
+    )
+    await loadout.getByText('Scout terrain', { exact: true }).click()
+    await loadout.getByRole('button', { name: 'Deeper banks' }).click()
+    await loadout
+      .getByRole('img', { name: /Banked Gully snow relief across the trail/ })
+      .waitFor()
+    await loadout.locator('#technique').selectOption('short')
+    await loadout.getByRole('button', { name: 'Apply setup' }).click()
+    await world.waitFor()
+    assert.equal(
+      await page.locator('.course-hud h1').textContent(),
+      'Banked Gully',
+    )
+    await page.getByRole('button', { name: /^Start run/ }).click()
+    await page
+      .locator('.current-terrain-stage')
+      .filter({ hasText: 'Winding channel' })
+      .waitFor()
+    assert.ok(await page.locator('.bank-readout').isVisible())
+    await page.getByRole('button', { name: 'End run', exact: true }).click()
+    await page.waitForFunction(
+      () =>
+        JSON.parse(localStorage.getItem('fallline.runs') || '[]')[0]?.setup
+          .course === 'gully',
+    )
+    await page.goto(url + '#skiing/short')
+    await lab.getByLabel('Terrain to inspect').selectOption('rollers')
+    await lab.locator('.terrain-profile[data-terrain="rollers"]').waitFor()
+    await lab.getByRole('button', { name: 'Practice this technique' }).click()
+    assert.equal(
+      await page.locator('.course-hud h1').textContent(),
+      'Roller Run',
+    )
     assert.deepEqual(errors, [])
   },
 )

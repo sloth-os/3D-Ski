@@ -1,3 +1,4 @@
+import { TerrainProfile } from './TerrainProfile.tsx'
 import { MuscleReadout, MuscleEvidence } from './MuscleReadout.tsx'
 import {
   effortBand,
@@ -748,7 +749,8 @@ export function Loadout({
 }) {
   const [draft, setDraft] = useState<Setup>({ ...setup }),
     gear = equipmentFor(draft.technique)
-  const options = lessonsFor(sportFor(draft.technique))
+  const options = lessonsFor(sportFor(draft.technique)),
+    chosen = courses[draft.course]
   return (
     <div className="loadout">
       <div className="field-label">Terrain</div>
@@ -769,11 +771,28 @@ export function Loadout({
           >
             <strong>{courses[id].name}</strong>
             <span>
+              <i
+                aria-hidden="true"
+                className={'slope-symbol ' + courses[id].symbol}
+              />
               {courses[id].level} · {courses[id].pitch}°
             </span>
             {draft.course === id && <Check size={15} />}
           </button>
         ))}
+      </div>
+      <div className="terrain-brief">
+        <div>
+          <strong>{chosen.name}</strong>
+          <small>
+            {lengthText(chosen.length, prefs.units)} · {chosen.gates} gates
+          </small>
+        </div>
+        <p>{chosen.description}</p>
+        <details className="scout-terrain">
+          <summary>Scout terrain</summary>
+          <TerrainProfile id={draft.course} units={prefs.units} />
+        </details>
       </div>
       <div className="setting-group">
         <span className="field-label">Equipment</span>

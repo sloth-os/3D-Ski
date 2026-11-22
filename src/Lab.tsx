@@ -35,6 +35,7 @@ import {
   equipmentFor,
   isSwitchDrill,
   type Setup,
+  type CourseId,
   type TechniqueId,
 } from './course.ts'
 import { lengthText, type Prefs } from './storage.ts'
@@ -55,12 +56,14 @@ export function Lab({
     stopEdge: Setup['stopEdge'],
     lens: Lens,
     focus: MuscleFocus,
+    course: CourseId,
   ) => void
   units: Prefs['units']
 }) {
   const [lens, setLens] = useState<Lens>('muscles'),
     [focus, setFocus] = useState<MuscleFocus>('auto')
   const view = { lens, setLens, focus, setFocus }
+  const [course, setCourse] = useState(setup.course)
   const [angle, setAngle] = useState(32),
     [speed, setSpeed] = useState(28)
   const sport = sportFor(id),
@@ -70,8 +73,8 @@ export function Lab({
   )
   const t = techniques[id],
     study = useMemo(
-      () => ({ ...setup, technique: id, stopEdge }),
-      [setup, id, stopEdge],
+      () => ({ ...setup, technique: id, stopEdge, course }),
+      [setup, id, stopEdge, course],
     )
   const f = idealTurn(study, angle, speed),
     board = equipmentFor(id) === 'snowboard'
@@ -82,7 +85,7 @@ export function Lab({
     <div className="lesson-actions">
       <button
         className="primary"
-        onClick={() => practice(id, false, stopEdge, lens, focus)}
+        onClick={() => practice(id, false, stopEdge, lens, focus, course)}
       >
         <Play size={16} fill="currentColor" />
         {isSafety(id)
@@ -98,7 +101,7 @@ export function Lab({
       </button>
       <button
         className="outline-btn"
-        onClick={() => practice(id, true, stopEdge, lens, focus)}
+        onClick={() => practice(id, true, stopEdge, lens, focus, course)}
       >
         Watch demo
       </button>
@@ -243,7 +246,7 @@ export function Lab({
       </div>
       {!studio && (
         <div className="environment-grid">
-          <TerrainProfile units={units} />
+          <TerrainProfile id={course} choose={setCourse} units={units} />
           <section className="panel surface-notes">
             <h2>
               <Snowflake size={18} />

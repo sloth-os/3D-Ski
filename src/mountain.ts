@@ -161,7 +161,13 @@ export function createMountain(
   renderer.shadowMap.type = THREE.PCFSoftShadowMap
   renderer.toneMapping = THREE.ACESFilmicToneMapping
   renderer.toneMappingExposure = 1.1
-  scene.add(new THREE.HemisphereLight(0xf0f7ff, 0x9aafbc, 1.63))
+  const sculpted = !study && c.form !== 'piste'
+  const sunOffset = sculpted
+    ? new THREE.Vector3(-19, 11, -9)
+    : new THREE.Vector3(-12, 19, -8)
+  scene.add(
+    new THREE.HemisphereLight(0xf0f7ff, 0x9aafbc, sculpted ? 1.2 : 1.63),
+  )
   const sun = new THREE.DirectionalLight(0xffe5bd, 2.9)
   sun.castShadow = true
   sun.shadow.mapSize.set(1024, 1024)
@@ -199,7 +205,8 @@ export function createMountain(
   const backdrop = study
     ? new THREE.Texture()
     : new THREE.TextureLoader().load(
-        import.meta.env.BASE_URL + 'images/glacier-bowl.webp',
+        import.meta.env.BASE_URL +
+          (setup.course === 'ridge' ? 'images/glacier-bowl.webp' : c.image),
       )
   backdrop.colorSpace = THREE.SRGBColorSpace
   backdrop.wrapS = THREE.MirroredRepeatWrapping
@@ -314,11 +321,12 @@ export function createMountain(
       sky.visible = !study && !plate
       catcher.visible = plate
       guide.visible = !isSafety(setup.technique) && opt.line && !plate
-      const pitch = (f.pitch || c.pitch) * radians
+      const pitch = f.pitch * radians,
+        bank = f.bank * radians
       pos.set(f.x, worldHeight(c, f.d, f.x), zAt(c, f.d))
       if (study) {
         terrain.position.copy(pos)
-        terrain.rotation.x = -pitch
+        terrain.rotation.set(-pitch, 0, bank, 'XZY')
       }
       catcher.position.copy(pos)
       catcher.position.y += 0.006
@@ -330,14 +338,14 @@ export function createMountain(
         (isSwitchDrill(setup.technique) || f.air.switch || !!f.pivot) &&
         f.air.phase !== 'flight'
       directionMark.position.copy(pos)
-      directionMark.rotation.set(-pitch, -f.heading, 0, 'XYZ')
+      directionMark.rotation.set(-pitch, -f.heading, bank, 'XZY')
       skier.root.position.copy(pos)
       skier.root.position.y += f.air.height
       skier.root.rotation.set(
         -pitch,
         -f.heading - f.boardYaw - bodyHeading(f),
-        0,
-        'XYZ',
+        bank,
+        'XZY',
       )
       const pose = riderPose(f, setup),
         forces = analyse(f, setup)
@@ -364,7 +372,7 @@ export function createMountain(
       }
       tracks(f, !study && !plate)
       if (!study) spray.update(f, pos, pitch)
-      sun.position.copy(pos).add(new THREE.Vector3(-12, 19, -8))
+      sun.position.copy(pos).add(sunOffset)
       sun.target.position.copy(pos)
       const shot = cameraShot(f, c, opt, board)
       dest.fromArray(shot.eye)

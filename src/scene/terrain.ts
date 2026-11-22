@@ -1,3 +1,4 @@
+import { courseStages } from '../terrainGuide.ts'
 import { isSafety, laneLength } from '../safety.ts'
 import * as THREE from 'three'
 import type { Course, Setup } from '../course.ts'
@@ -19,12 +20,20 @@ function snowGeometry(c: Course) {
     tex: number[] = [],
     colors: number[] = [],
     indices: number[] = []
-  const across = 80,
-    along = Math.ceil((c.length + 180) / 3)
+  const detailed = c.form !== 'piste'
+  const centerSpacing = c.form === 'moguls' ? 1 : 1.25
+  const xs: number[] = []
+  for (let x = -120; x <= 120; ) {
+    xs.push(x)
+    x += detailed && x >= -30 && x < 30 ? centerSpacing : 3
+  }
+  const spacing = c.form === 'moguls' ? 1 : detailed ? 2 : 3
+  const across = xs.length - 1,
+    along = Math.ceil((c.length + 180) / spacing)
   for (let j = 0; j <= along; j++) {
-    const d = -55 + j * 3
+    const d = -55 + j * spacing
     for (let i = 0; i <= across; i++) {
-      const x = (i - across / 2) * 3
+      const x = xs[i]
       const rim = Math.max(Math.abs(x) - 27, 0) * 0.048
       const y =
         worldHeight(c, d, x) +
@@ -46,6 +55,24 @@ function snowGeometry(c: Course) {
   g.setAttribute('color', new THREE.Float32BufferAttribute(colors, 3))
   g.setIndex(indices)
   g.computeVertexNormals()
+  if (detailed) {
+    // Blue skylight fills faces that turn away from the low alpine sun.
+    const normals = g.getAttribute('normal'),
+      tint = g.getAttribute('color')
+    const meanZ = -Math.sin(c.pitch * radians)
+    for (let i = 0; i < normals.count; i++) {
+      const shadow = Math.min(
+        0.61,
+        Math.max(0, 1.55 * normals.getX(i) + 1.1 * (normals.getZ(i) - meanZ)),
+      )
+      tint.setXYZ(
+        i,
+        tint.getX(i) * (1 - shadow),
+        tint.getY(i) * (1 - 0.72 * shadow),
+        tint.getZ(i) * (1 - 0.38 * shadow),
+      )
+    }
+  }
   return g
 }
 function snowTexture(setup: Setup) {
@@ -75,11 +102,12 @@ function snowTexture(setup: Setup) {
   return map
 }
 
-function addForest(scene: THREE.Group, c: Course, setup: Setup) {
-  const random = randomSeed(
-    setup.course === 'ridge' ? 472 : setup.course === 'bowl' ? 629 : 818,
-  )
-  const perSide = setup.course === 'bowl' ? 63 : Math.round(c.length * 0.56)
+function addForest(scene: THREE.Group, c: Course) {
+  const random = randomSeed(c.forestSeed)
+  const perSide =
+    c.scenery === 'alpine'
+      ? Math.ceil(c.length * 0.08)
+      : Math.round(c.length * (c.scenery === 'forest' ? 0.56 : 0.34))
   const dummy = new THREE.Object3D()
   const texture = new THREE.TextureLoader().load(
     import.meta.env.BASE_URL + 'images/spruce.webp',
@@ -130,7 +158,7 @@ function addForest(scene: THREE.Group, c: Course, setup: Setup) {
     const side = i % 2 ? 1 : -1
     const d = random() * (c.length + 120) - 32
     const x = (31 + 3 * Math.sin(d / 32) + Math.pow(random(), 1.6) * 72) * side
-    const height = (6 + random() * 11) * (setup.course === 'bowl' ? 0.67 : 1)
+    const height = (6 + random() * 11) * (c.scenery === 'alpine' ? 0.67 : 1)
     const width = height * (0.47 + random() * 0.19)
     const ground = pointAt(c, x, d)
     ground.y +=
@@ -162,7 +190,7 @@ function addForest(scene: THREE.Group, c: Course, setup: Setup) {
   const rocks = new THREE.InstancedMesh(
     new THREE.IcosahedronGeometry(1, 0),
     new THREE.MeshStandardMaterial({ color: 0x86929d, flatShading: true }),
-    setup.course === 'bowl' ? 105 : 35,
+    c.scenery === 'alpine' ? 105 : 35,
   )
   for (let i = 0; i < rocks.count; i++) {
     const d = random() * (c.length + 65),
@@ -227,6 +255,40 @@ function addGates(scene: THREE.Group, c: Course, gates: Gate[]) {
   }
 }
 
+function addTrailSigns(scene: THREE.Group, c: Course) {
+  const stages = courseStages(c).slice(1)
+  if (!stages.length) return
+  const post = new THREE.BoxGeometry(0.14, 2.65, 0.14)
+  const wood = new THREE.MeshStandardMaterial({ color: 0x685344 })
+  const panel = new THREE.BoxGeometry(4.4, 1.08, 0.11)
+  for (const stage of stages) {
+    const x = -16,
+      d = stage.d
+    const pole = new THREE.Mesh(post, wood)
+    pole.position.copy(pointAt(c, x, d, 1.32))
+    scene.add(pole)
+    const sign = document.createElement('canvas')
+    sign.width = 512
+    sign.height = 128
+    const ctx = sign.getContext('2d')!
+    ctx.fillStyle = '#18393d'
+    ctx.fillRect(0, 0, 512, 128)
+    ctx.fillStyle = '#c1eaa2'
+    ctx.fillRect(0, 0, 10, 128)
+    ctx.font = 'bold 34px sans-serif'
+    ctx.textBaseline = 'middle'
+    ctx.fillText(stage.name, 29, 65, 451)
+    const tex = new THREE.CanvasTexture(sign)
+    tex.colorSpace = THREE.SRGBColorSpace
+    const board = new THREE.Mesh(
+      panel,
+      new THREE.MeshBasicMaterial({ map: tex }),
+    )
+    board.position.copy(pointAt(c, x, d, 2.46))
+    scene.add(board)
+  }
+}
+
 export function addTerrain(
   scene: THREE.Scene,
   course: Course,
@@ -248,7 +310,7 @@ export function addTerrain(
   )
   snow.receiveShadow = true
   terrain.add(snow)
-  addForest(terrain, course, setup)
+  addForest(terrain, course)
   if (isSafety(setup.technique)) {
     const tile = new THREE.BoxGeometry(0.51, 0.035, 0.25)
     const colors = [0x173d43, 0xa6f0d6].map(
@@ -260,7 +322,10 @@ export function addTerrain(
       stripe.rotation.x = -course.pitch * radians
       terrain.add(stripe)
     }
-  } else addGates(terrain, course, gates)
+  } else {
+    addGates(terrain, course, gates)
+    addTrailSigns(terrain, course)
+  }
   scene.add(terrain)
   return terrain
 }

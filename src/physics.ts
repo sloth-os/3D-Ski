@@ -10,7 +10,18 @@ import {
   type Setup,
 } from './course.ts'
 
-import { clamp, radians, pitchAt, worldHeight } from './slope.ts'
+import {
+  clamp,
+  radians,
+  pitchAt,
+  bankAt,
+  gullyCenter,
+  featureStart,
+  runoutStart,
+  undulation,
+  slopeAxes,
+  worldHeight,
+} from './slope.ts'
 export { clamp, radians, pitchAt, worldHeight, undulation } from './slope.ts'
 import {
   initialAir,
@@ -79,6 +90,7 @@ export type Frame = {
   lean: number
   slip: number
   pitch: number
+  bank: number
   edgeRate: number
   normalAccel: number
   lateralAccel: number
@@ -122,7 +134,8 @@ export const emptyFrame = (setup: Setup = defaultSetup): Frame => ({
   brake: 0,
   lean: 0,
   slip: 0,
-  pitch: 0,
+  pitch: pitchAt(courses[setup.course], 0) / radians,
+  bank: bankAt(courses[setup.course], 0) / radians,
   edgeRate: 0,
   normalAccel: 9.81,
   lateralAccel: 0,
@@ -150,11 +163,18 @@ export const emptyFrame = (setup: Setup = defaultSetup): Frame => ({
 })
 
 export function buildGates(c: Course): Gate[] {
-  return Array.from({ length: c.gates }, (_, i) => ({
-    d: ((i + 0.78) * c.length) / (c.gates + 0.2),
-    x: (i % 2 ? -1 : 1) * c.swing * (0.62 + 0.32 * Math.sin(i * 0.8 + 0.4)),
-    width: c.width,
-  }))
+  return Array.from({ length: c.gates }, (_, i) => {
+    const sign = i % 2 ? -1 : 1
+    const d = ((i + 0.78) * c.length) / (c.gates + 0.2)
+    let x = sign * c.swing * (0.62 + 0.32 * Math.sin(i * 0.8 + 0.4))
+    if (c.form === 'gully') x = gullyCenter(d) + sign * c.swing
+    if (c.form === 'rollers') x = c.swing * Math.sin(i * 1.12 + 0.4)
+    if (c.form === 'traverse')
+      x = sign * c.swing * (0.84 + 0.1 * Math.cos(i * 0.7))
+    if (c.form === 'moguls')
+      x = sign * c.swing * (0.72 + 0.17 * Math.sin(i * 1.6))
+    return { d, x, width: c.width }
+  })
 }
 export function lineAt(gates: Gate[], distance: number) {
   const index = gates.findIndex((g) => g.d >= distance)
@@ -192,13 +212,16 @@ export function step(
   const course = courses[setup.course],
     surface = surfaces[setup.surface],
     tech = techniques[setup.technique]
-  const pitch = pitchAt(course, f.d, f.x)
+  const pitch = pitchAt(course, f.d, f.x),
+    bank = bankAt(course, f.d, f.x, pitch)
+  const axes = slopeAxes(pitch, bank, f.heading)
   if (f.t === 0 && startsSwitch(setup) && !f.air.switch)
     f.air = initialAir(true)
   if (f.t === 0 && isSafety(setup.technique) && !f.safety)
     Object.assign(f, emptyFrame(setup))
   f.t += dt
   f.pitch = pitch / radians
+  f.bank = bank / radians
   f.forceHeading = f.heading
   if (isSafety(setup.technique)) {
     stepSafety(f, input, setup, surface.friction, dt)
@@ -228,7 +251,7 @@ export function step(
         : input.flex
           ? 0.96
           : 0.2 + 0.38 * f.tuck,
-      5,
+      course.form === 'moguls' ? 8 : 5,
       dt,
     )
   const wedge = setup.technique === 'wedge'
@@ -264,15 +287,16 @@ export function step(
   )
 
   // Gravity along the skis, Coulomb sliding resistance, skidding, and quadratic air drag.
-  const dx = 0.55 * Math.sin(f.heading),
-    dd = 0.55 * Math.cos(f.heading)
+  const horizontalCos = Math.cos(course.pitch * radians)
+  const dx = 0.55 * axes.forward[0],
+    dd = (-0.55 * axes.forward[2]) / horizontalCos
   const curvature =
     (worldHeight(course, f.d + dd, f.x + dx) -
       2 * worldHeight(course, f.d, f.x) +
       worldHeight(course, f.d - dd, f.x - dx)) /
     0.55 ** 2
   const normal = clamp(
-    9.81 * Math.cos(pitch) + curvature * f.speed * f.speed * Math.cos(pitch),
+    axes.normal[1] * (9.81 + curvature * f.speed * f.speed),
     2.5,
     21,
   )
@@ -288,16 +312,13 @@ export function step(
           Math.max(0, (Math.tan(pitch) - surface.friction) * 0.42),
         ))
   const drag = (0.0093 - 0.004 * f.tuck) * f.speed * f.speed
-  const acceleration =
-    9.81 * Math.sin(pitch) * Math.cos(f.heading) - resistance - drag
+  const acceleration = -9.81 * axes.forward[1] - resistance - drag
   const previousSpeed = f.speed
   f.speed = clamp(f.speed + acceleration * dt, 0, 32)
   f.dragAccel = drag
   f.frictionAccel = Math.max(
     0,
-    9.81 * Math.sin(pitch) * Math.cos(f.heading) -
-      drag -
-      (f.speed - previousSpeed) / dt,
+    -9.81 * axes.forward[1] - drag - (f.speed - previousSpeed) / dt,
   )
   const slipSign = Math.sign(f.edge || f.lastSide || 1)
   f.boardYaw = board
@@ -307,8 +328,7 @@ export function step(
   const engagement =
     Math.sin(edge) * (wedge ? 2.05 : board ? 0.88 : 1.5) * effectiveGrip
   const edgeRate = (Math.sign(f.edge) * f.speed * engagement) / cutRadius
-  const gravityRate =
-    (-Math.sin(f.heading) * 9.81 * Math.sin(pitch)) / Math.max(f.speed, 3)
+  const gravityRate = (-9.81 * axes.side[1]) / Math.max(f.speed, 3)
   const previousHeading = f.heading
   const intendedRate = edgeRate + gravityRate
   const bankSide = Math.sign(f.x)
@@ -323,14 +343,23 @@ export function step(
       : Infinity
   f.lateralAccel = f.speed * yawRate
   const lateral = Math.abs(f.lateralAccel)
-  f.lean = Math.atan2(f.speed * yawRate, normal)
+  // A quick change of support under the boots moves the legs before it moves the torso.
+  const supportLean = Math.atan2(f.lateralAccel + 9.81 * axes.side[1], normal)
+  f.lean =
+    course.form === 'piste'
+      ? Math.atan2(f.lateralAccel, normal)
+      : approach(f.lean, supportLean, 4.5, dt)
   f.load = clamp(
     50 + (38 * lateral) / (lateral + 3.2) + Math.sin(edge) * 5,
     50,
     94,
   )
-  f.x = clamp(f.x + Math.sin(f.heading) * f.speed * dt, -26.5, 26.5)
-  f.d = Math.min(course.length, f.d + Math.cos(f.heading) * f.speed * dt)
+  const travel = slopeAxes(pitch, bank, f.heading).forward
+  f.x = clamp(f.x + travel[0] * f.speed * dt, -26.5, 26.5)
+  f.d = Math.min(
+    course.length,
+    f.d - (travel[2] * f.speed * dt) / horizontalCos,
+  )
   f.maxSpeed = Math.max(f.maxSpeed, f.speed)
   const side = Math.abs(f.edge) >= 9 ? Math.sign(f.edge) : 0
   if (side && side !== f.lastSide && f.speed > 1 && !f.pivot) {
@@ -498,13 +527,11 @@ export function demonstrationInput(
     Math.atan(gradient) +
     Math.atan2(center - predictedX, anticipation + 4) * 0.85
   const tech = techniques[setup.technique],
-    surface = surfaces[setup.surface]
+    surface = surfaces[setup.surface],
+    course = courses[setup.course]
+  const axes = slopeAxes(f.pitch * radians, f.bank * radians, f.heading)
   const rate =
-    2.4 * (heading - f.heading) +
-    (Math.sin(f.heading) *
-      9.81 *
-      Math.sin(courses[setup.course].pitch * radians)) /
-      Math.max(f.speed, 3)
+    2.4 * (heading - f.heading) + (9.81 * axes.side[1]) / Math.max(f.speed, 3)
   const wedge = setup.technique === 'wedge'
   const board = equipmentFor(setup.technique) === 'snowboard'
   const targetEdge = Math.atan(
@@ -518,9 +545,28 @@ export function demonstrationInput(
   const targetSpeed =
     (wedge ? 8.5 : setup.technique === 'short' ? 11.5 : 13.5) +
     1.3 * Math.cos(f.d / 25)
+  let flex = Math.abs(steer) > 0.42 || f.pitch > course.pitch + 1.2
+  if (
+    (course.form === 'rollers' || course.form === 'moguls') &&
+    f.d > featureStart &&
+    f.d < runoutStart(course)
+  ) {
+    // Read the approaching crest early enough for the reference rider's legs to retract.
+    const lead = (course.form === 'moguls' ? 0.09 : 0.17) * f.speed,
+      reach = course.form === 'rollers' ? 5 : 2
+    const forwardD = -axes.forward[2] / Math.cos(course.pitch * radians)
+    const relief = (travel: number) =>
+      undulation(
+        course,
+        f.d + forwardD * travel,
+        f.x + axes.forward[0] * travel,
+      )
+    flex =
+      relief(lead) > (relief(lead - reach) + relief(lead + reach)) / 2 + 0.015
+  }
   return {
     steer,
-    flex: Math.abs(steer) > 0.42 || f.pitch > courses[setup.course].pitch + 1.2,
+    flex,
     tuck: !wedge && Math.abs(steer) < 0.13,
     brake: f.speed > targetSpeed,
     ...(isTrick(setup.technique)

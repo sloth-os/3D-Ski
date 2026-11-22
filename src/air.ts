@@ -1,6 +1,13 @@
 import type { Course } from './course.ts'
 import type { Frame, Input } from './physics.ts'
-import { clamp, radians, worldHeight } from './slope.ts'
+import {
+  bankAt,
+  pitchAt,
+  slopeAxes,
+  clamp,
+  radians,
+  worldHeight,
+} from './slope.ts'
 import {
   isSpin,
   usesPose,
@@ -104,7 +111,8 @@ export function pushSupport(f: Frame, id: string) {
       u *
       (1 - u) *
       popSpeed(id, f.air.charge) *
-      Math.cos(f.pitch * radians)) /
+      Math.cos(f.pitch * radians) *
+      Math.cos(f.bank * radians)) /
     pushTime
   )
 }
@@ -194,6 +202,7 @@ export function stepPivot(f: Frame, input: Input, dt: number) {
 function launch(f: Frame, id: TrickId, course: Course) {
   const a = f.air,
     pitch = f.pitch * radians
+  const forward = slopeAxes(pitch, f.bank * radians, f.heading).forward
   const maxPop = popSpeed(id, 1)
   const pop = popSpeed(id, a.charge)
   const angle = spinDegrees(id) * radians
@@ -215,9 +224,9 @@ function launch(f: Frame, id: TrickId, course: Course) {
     worldY: worldHeight(course, f.d, f.x),
     duration: (2 * pop) / 9.81,
     attempts: a.attempts + 1,
-    vx: f.speed * Math.sin(f.heading),
-    vy: pop - f.speed * Math.cos(f.heading) * Math.sin(pitch),
-    vz: -f.speed * Math.cos(f.heading) * Math.cos(pitch),
+    vx: f.speed * forward[0],
+    vy: pop + f.speed * forward[1],
+    vz: f.speed * forward[2],
   })
 }
 function land(f: Frame, id: TrickId) {
@@ -244,16 +253,27 @@ function land(f: Frame, id: TrickId) {
   a.switch =
     a.startSwitch !== (Math.abs(Math.round(a.spin / Math.PI)) % 2 === 1)
   if (a.switch !== a.startSwitch) f.lastSide = 0
-  a.impact = Math.max(
+  const { normal, forward, side } = slopeAxes(
+    f.pitch * radians,
+    f.bank * radians,
     0,
-    -a.vy * Math.cos(f.pitch * radians) + a.vz * Math.sin(f.pitch * radians),
   )
+  const project = (axis: [number, number, number]) =>
+    a.vx * axis[0] + a.vy * axis[1] + a.vz * axis[2]
+  const downhill = project(forward),
+    across = project(side)
+  // Snow absorbs the incoming normal speed. Tangential velocity carries into the next turn.
+  a.impact = Math.max(0, -project(normal))
+  f.speed = Math.min(32, Math.hypot(across, downhill))
+  f.heading = clamp(Math.atan2(across, downhill), -1.22, 1.22)
+  f.forceHeading = f.heading
+  f.maxSpeed = Math.max(f.maxSpeed, f.speed)
   a.award = result === 'Clean landing' ? tricks[id].points : 0
   if (a.award) a.landed++
   a.bestTime = Math.max(a.bestTime, a.elapsed)
   a.points += a.award
   f.points += a.award
-  f.normalAccel = 9.81 * Math.cos(f.pitch * radians) + landingSupport(f)
+  f.normalAccel = 9.81 * normal[1] + landingSupport(f)
   a.pushStartFlex = f.flex
   f.load = 50
   f.quality = Math.round((100 * a.landed) / a.attempts)
@@ -328,7 +348,12 @@ function fly(f: Frame, id: TrickId, course: Course, input: Input, dt: number) {
     0.23 +
     0.28 * Math.sin(Math.PI * clamp(a.elapsed / a.duration, 0, 1)) +
     0.42 * a.pose
-  if (touching) land(f, id)
+  if (touching) {
+    const pitch = pitchAt(course, f.d, f.x)
+    f.pitch = pitch / radians
+    f.bank = bankAt(course, f.d, f.x, pitch) / radians
+    land(f, id)
+  }
 }
 // Copy the per-step state so paused frames, lab replay samples, and recorder snapshots remain independent.
 export function stepAir(

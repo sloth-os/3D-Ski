@@ -4,6 +4,9 @@ import { freestyleGuide, isBoardTrick, tricks } from './tricks.ts'
 export const courses = {
   ridge: {
     name: 'Alpine Ridge',
+    form: 'piste',
+    scenery: 'forest',
+    forestSeed: 472,
     region: 'Valais, Switzerland',
     level: 'Intermediate',
     symbol: 'blue',
@@ -19,6 +22,9 @@ export const courses = {
   },
   meadow: {
     name: 'Pine Meadow',
+    form: 'piste',
+    scenery: 'forest',
+    forestSeed: 818,
     region: 'Bernese Oberland, Switzerland',
     level: 'Beginner',
     symbol: 'green',
@@ -35,6 +41,9 @@ export const courses = {
   },
   bowl: {
     name: 'Glacier Bowl',
+    form: 'piste',
+    scenery: 'alpine',
+    forestSeed: 629,
     region: 'Graubünden, Switzerland',
     level: 'Advanced',
     symbol: 'black',
@@ -49,10 +58,93 @@ export const courses = {
     description:
       'An exposed high-alpine bowl with changing pitch and tighter gates.',
   },
+  traverse: {
+    name: 'Larch Traverse',
+    form: 'traverse',
+    scenery: 'forest',
+    forestSeed: 1021,
+    region: 'Engadin, Switzerland',
+    level: 'Beginner',
+    symbol: 'green',
+    pitch: 12,
+    altitude: 1890,
+    length: 440,
+    gates: 9,
+    width: 7.2,
+    swing: 10.6,
+    bumps: 0.13,
+    image: 'images/larch-traverse.webp',
+    description:
+      'Wide turns cross two gentle sidehills. Practice holding a line, then release the uphill edge as the camber changes sides.',
+  },
+  rollers: {
+    name: 'Roller Run',
+    form: 'rollers',
+    scenery: 'treeline',
+    forestSeed: 1267,
+    region: 'Bernese Oberland, Switzerland',
+    level: 'Intermediate',
+    symbol: 'blue',
+    pitch: 16,
+    altitude: 2210,
+    length: 480,
+    gates: 11,
+    width: 6.8,
+    swing: 6.5,
+    bumps: 0.12,
+    image: 'images/roller-run.webp',
+    description:
+      'Rounded snow rollers grow closer together down the course. Flex over the crests and lengthen the legs into the hollows.',
+  },
+  gully: {
+    name: 'Banked Gully',
+    form: 'gully',
+    scenery: 'treeline',
+    forestSeed: 1447,
+    region: 'Valais, Switzerland',
+    level: 'Intermediate',
+    symbol: 'blue',
+    pitch: 19,
+    altitude: 2360,
+    length: 560,
+    gates: 12,
+    width: 6.2,
+    swing: 4.2,
+    bumps: 0.16,
+    image: 'images/banked-gully.webp',
+    description:
+      'A winding channel carries the gate line from wall to wall. Compare the support on a bank with the pull toward the channel floor.',
+  },
+  moguls: {
+    name: 'Mogul Garden',
+    form: 'moguls',
+    scenery: 'alpine',
+    forestSeed: 1531,
+    region: 'Uri, Switzerland',
+    level: 'Advanced',
+    symbol: 'black',
+    pitch: 21,
+    altitude: 2570,
+    length: 390,
+    gates: 14,
+    width: 5.2,
+    swing: 5.4,
+    bumps: 0.14,
+    image: 'images/mogul-garden.webp',
+    description:
+      'Offset rows of rounded bumps leave a winding trough line. Keep the torso quiet as the legs absorb the crests and extend into the troughs.',
+  },
 } as const
 
 export type CourseId = keyof typeof courses
 export type Course = (typeof courses)[CourseId]
+
+export function courseFromHash(hash: string): CourseId | null {
+  const match = /^#terrain\/([a-z]+)$/.exec(hash)
+  return match && Object.hasOwn(courses, match[1])
+    ? (match[1] as CourseId)
+    : null
+}
 
 export const surfaces = {
   groomed: {

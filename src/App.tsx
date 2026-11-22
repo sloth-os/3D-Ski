@@ -1,4 +1,5 @@
-import { useCallback, useEffect, useRef, useState } from 'react'
+import { courseStages, stageAt } from './terrainGuide.ts'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import {
   ArrowDownRight,
   Footprints,
@@ -24,6 +25,8 @@ import { type MuscleFocus } from './muscles.ts'
 import { coachingCue, lenses, type Lens } from './analysis.ts'
 import {
   courses,
+  courseFromHash,
+  type CourseId,
   techniques,
   equipmentFor,
   isSwitchDrill,
@@ -82,6 +85,7 @@ type Dialog =
   | 'run-log'
   | null
 function fromHash(preferred: TechniqueId): Dialog {
+  if (courseFromHash(location.hash)) return 'setup'
   if (resolveLesson(location.hash, preferred)) return 'lab'
   return location.hash === '#run-log' ? 'run-log' : null
 }
@@ -90,6 +94,9 @@ export default function App() {
     [prefs, setPrefs] = useState(initialPrefs),
     [runs, setRuns] = useState(initialLog)
   const [dialog, setDialog] = useState<Dialog>(() => fromHash(setup.technique)),
+    [linkedCourse, setLinkedCourse] = useState(() =>
+      courseFromHash(location.hash),
+    ),
     [review, setReview] = useState<Run | null>(null),
     log = useRef(runs)
   const [labId, setLabId] = useState<TechniqueId>(
@@ -124,7 +131,12 @@ export default function App() {
     c = courses[setup.course],
     preview = run.phase === 'preview',
     paused = run.phase === 'paused'
+  const stages = useMemo(() => courseStages(c), [c]),
+    stage = isSafety(setup.technique)
+      ? undefined
+      : stageAt(stages, preview ? 0 : f.d)
   function close() {
+    setLinkedCourse(null)
     setDialog(null)
     setReview(null)
     if (location.hash)
@@ -143,6 +155,7 @@ export default function App() {
     )
   }
   function open(which: Dialog) {
+    setLinkedCourse(null)
     run.pause()
     if (which === 'analysis')
       setSnapshot({
@@ -174,10 +187,11 @@ export default function App() {
     stopEdge: Setup['stopEdge'],
     studyLens: Lens,
     focus: MuscleFocus,
+    course: CourseId,
   ) {
     changeLens(studyLens)
     setMuscle(focus)
-    const chosen = { ...setup, technique: id, stopEdge }
+    const chosen = { ...setup, technique: id, stopEdge, course }
     configure(chosen)
     start(demo, chosen)
   }
@@ -209,6 +223,7 @@ export default function App() {
   useEffect(() => {
     const hash = () => {
         run.pause()
+        setLinkedCourse(courseFromHash(location.hash))
         const id = resolveLesson(location.hash, setup.technique)
         setDialog(fromHash(setup.technique))
         if (id) {
@@ -441,7 +456,11 @@ export default function App() {
         <h1>{c.name}</h1>
         <div className="region">
           <MapPin size={14} />
-          {c.region}
+          {stage && !preview ? (
+            <span className="current-terrain-stage">{stage.name}</span>
+          ) : (
+            c.region
+          )}
         </div>
         <div className="course-badges">
           <span>
@@ -452,6 +471,15 @@ export default function App() {
             <ArrowDownRight size={13} />
             {preview ? c.pitch : Math.round(f.pitch)}° pitch
           </span>
+          {stage && !preview && (
+            <span
+              className="bank-readout"
+              title="Bank is the sideways tilt of the snow. The arrow points toward the high side."
+            >
+              {Math.abs(f.bank) >= 0.1 && (f.bank > 0 ? '↗ ' : '↖ ')}
+              {Math.abs(f.bank).toFixed(1)}° bank
+            </span>
+          )}
           {!preview && !isSafety(setup.technique) && (
             <button
               className="stance-chip"
@@ -567,7 +595,11 @@ export default function App() {
           </span>
           <b>{techniques[setup.technique].name}</b>
           <span>
-            {preview ? techniques[setup.technique].cue : coachingCue(f, setup)}
+            {stage && !preview && f.d - stage.d < 27
+              ? stage.cue
+              : preview
+                ? techniques[setup.technique].cue
+                : coachingCue(f, setup)}
           </span>
         </div>
       )}
@@ -604,7 +636,8 @@ export default function App() {
       {dialog === 'setup' && (
         <Modal title="Run setup" onClose={close}>
           <Loadout
-            setup={setup}
+            key={linkedCourse ?? 'current'}
+            setup={linkedCourse ? { ...setup, course: linkedCourse } : setup}
             prefs={prefs}
             apply={configure}
             toggle={() => setPrefs((p) => ({ ...p, line: !p.line }))}
