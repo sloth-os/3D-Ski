@@ -1,6 +1,11 @@
-import { bodyHeading, pushProgress } from './air.ts'
+import { pushProgress } from './air.ts'
 import {
   add3,
+  diff,
+  dot,
+  unit,
+  cross,
+  riderVector,
   gravity,
   magnitude,
   mixPoint,
@@ -203,29 +208,6 @@ function movement(
     'The outside leg carries more of the turn. Its quadriceps steady the knee and control its bend.',
   ]
 }
-const diff = (a: Point3, b: Point3) => add3(a, scale3(b, -1))
-const dot = (a: Point3, b: Point3) => a[0] * b[0] + a[1] * b[1] + a[2] * b[2]
-const unit = (v: Point3) => scale3(v, 1 / (magnitude(v) || 1))
-const cross = (a: Point3, b: Point3): Point3 => [
-  a[1] * b[2] - a[2] * b[1],
-  a[2] * b[0] - a[0] * b[2],
-  a[0] * b[1] - a[1] * b[0],
-]
-// Undo the rendered rider's world rotation before taking a moment about the knee.
-function riderReaction(f: Frame, a: ForceState): Point3 {
-  const [x, y, z] = a.reaction,
-    pitch = f.pitch * radians,
-    yaw = f.heading + f.boardYaw + bodyHeading(f)
-  const levelZ = y * Math.sin(pitch) + z * Math.cos(pitch)
-  const levelY = y * Math.cos(pitch) - z * Math.sin(pitch),
-    bank = f.bank * radians
-  const right = x * Math.cos(bank) + levelY * Math.sin(bank)
-  return [
-    right * Math.cos(yaw) + levelZ * Math.sin(yaw),
-    -x * Math.sin(bank) + levelY * Math.cos(bank),
-    -right * Math.sin(yaw) + levelZ * Math.cos(yaw),
-  ]
-}
 export function muscleWork(
   f: Frame,
   setup: Setup,
@@ -234,7 +216,7 @@ export function muscleWork(
 ) {
   const [phase, primary, cue] = movement(f, setup, a)
   const board = equipmentFor(setup.technique) === 'snowboard'
-  const reaction = riderReaction(f, a),
+  const reaction = riderVector(f, a.reaction),
     drive = Math.sin(Math.PI * pushProgress(f))
   const twist = clamp(
     Math.abs(p.torso.yaw - p.hipYaw) +

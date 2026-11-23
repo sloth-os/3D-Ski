@@ -1,3 +1,4 @@
+import { defaultLoad, type LoadSelection } from './loadPath.ts'
 import { courseStages, stageAt } from './terrainGuide.ts'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import {
@@ -102,8 +103,12 @@ export default function App() {
   const [labId, setLabId] = useState<TechniqueId>(
       () => resolveLesson(location.hash, setup.technique) ?? setup.technique,
     ),
+    [linkedPath, setLinkedPath] = useState(
+      () => location.hash === lessonPath(labId, true),
+    ),
     [camera, setCamera] = useState<CameraMode>('chase'),
     [lens, setLens] = useState<Lens>('forces'),
+    [load, setLoad] = useState<LoadSelection>(defaultLoad),
     [muscle, setMuscle] = useState<MuscleFocus>('auto')
   const [resetView, reset] = useState(0),
     [full, setFull] = useState(false),
@@ -136,6 +141,7 @@ export default function App() {
       ? undefined
       : stageAt(stages, preview ? 0 : f.d)
   function close() {
+    setLinkedPath(false)
     setLinkedCourse(null)
     setDialog(null)
     setReview(null)
@@ -145,13 +151,15 @@ export default function App() {
   }
   function openLesson(id: TechniqueId) {
     run.pause()
+    const path = dialog === 'lab' && linkedPath
+    setLinkedPath(path)
     setLabId(id)
     setDialog('lab')
     setReview(null)
     history.replaceState(
       null,
       '',
-      location.pathname + location.search + lessonPath(id),
+      location.pathname + location.search + lessonPath(id, path),
     )
   }
   function open(which: Dialog) {
@@ -188,7 +196,9 @@ export default function App() {
     studyLens: Lens,
     focus: MuscleFocus,
     course: CourseId,
+    selection: LoadSelection,
   ) {
+    setLoad(selection)
     changeLens(studyLens)
     setMuscle(focus)
     const chosen = { ...setup, technique: id, stopEdge, course }
@@ -226,12 +236,14 @@ export default function App() {
         setLinkedCourse(courseFromHash(location.hash))
         const id = resolveLesson(location.hash, setup.technique)
         setDialog(fromHash(setup.technique))
+        const path = !!id && location.hash === lessonPath(id, true)
+        setLinkedPath(path)
         if (id) {
           setLabId(id)
           history.replaceState(
             null,
             '',
-            location.pathname + location.search + lessonPath(id),
+            location.pathname + location.search + lessonPath(id, path),
           )
         }
         setReview(null)
@@ -244,7 +256,11 @@ export default function App() {
       }
     }
     const initial = resolveLesson(location.hash, setup.technique)
-    if (initial && location.hash !== lessonPath(initial))
+    if (
+      initial &&
+      location.hash !== lessonPath(initial) &&
+      location.hash !== lessonPath(initial, true)
+    )
       history.replaceState(
         null,
         '',
@@ -322,7 +338,12 @@ export default function App() {
     if (/^Digit[1-5]$/.test(e.code))
       setCamera(cameras[Number(e.code.slice(-1)) - 1].id)
     if (e.code === 'KeyF')
-      changeLens(lenses[(lenses.indexOf(lens) + 1) % lenses.length])
+      changeLens(
+        lenses[
+          (lenses.indexOf(lens === 'path' ? 'forces' : lens) + 1) %
+            lenses.length
+        ],
+      )
     if (e.code === 'Period' && paused) {
       e.preventDefault()
       run.singleStep()
@@ -359,6 +380,8 @@ export default function App() {
         prefs={prefs}
         camera={camera}
         lens={lens}
+        load={load}
+        setLoad={setLoad}
         muscle={muscle}
         resetView={resetView}
         compassRef={compassRef}
@@ -520,6 +543,8 @@ export default function App() {
         frame={f}
         prefs={prefs}
         lens={lens}
+        load={load}
+        setLoad={setLoad}
         muscle={muscle}
         setLens={changeLens}
         setMuscle={setMuscle}
@@ -652,7 +677,11 @@ export default function App() {
       )}
       {dialog === 'analysis' && (
         <Modal title="Frame analysis" onClose={close}>
-          <FrameInspector f={snapshot?.frame ?? f} setup={setup} />
+          <FrameInspector
+            f={snapshot?.frame ?? f}
+            setup={setup}
+            pathFirst={lens === 'path'}
+          />
           <details className="analysis-notes">
             <summary>Telemetry recorder</summary>
             <Telemetry
@@ -674,6 +703,8 @@ export default function App() {
           onClose={close}
         >
           <Lab
+            key={linkedPath ? 'load-path' : 'study'}
+            initialPath={linkedPath}
             setup={setup}
             id={labId}
             select={openLesson}

@@ -1,3 +1,5 @@
+import { defaultLoad, loadPath } from '../loadPath.ts'
+import { loadDrawing, loadTargets } from '../loadDrawing.ts'
 import { canvasSnowfield } from './canvasTerrain.ts'
 import { courseStages } from '../terrainGuide.ts'
 import {
@@ -597,6 +599,35 @@ export function canvasMountain(
           ctx.restore()
         }
       }
+      const chain =
+        opt.lens === 'path' && opt.forces && opt.camera !== 'first'
+          ? loadPath(f, setup, p, a)
+          : undefined
+      if (chain) {
+        const d = loadDrawing(chain, opt.load ?? defaultLoad)
+        for (const line of d.lines)
+          stroke(local(line.from), local(line.to), line.color, line.radius * 2)
+        for (const node of d.nodes)
+          ball(local(node.point), node.radius, node.color)
+        for (const head of d.heads) {
+          const base = project(local(head.from)),
+            tip = project(local(head.to))
+          if (Math.min(base.depth, tip.depth) < 0.07) continue
+          const dx = tip.x - base.x,
+            dy = tip.y - base.y,
+            len = Math.hypot(dx, dy) || 1,
+            r = head.radius * base.k
+          ctx.fillStyle = head.color
+          ctx.beginPath()
+          ctx.moveTo(tip.x, tip.y)
+          ctx.lineTo(base.x - (dy * r) / len, base.y + (dx * r) / len)
+          ctx.lineTo(base.x + (dy * r) / len, base.y - (dx * r) / len)
+          ctx.closePath()
+          ctx.fill()
+        }
+        upper = local(d.at)
+        lower = local(d.secondary)
+      }
       if (opt.lens === 'contact') {
         if (opt.forces && a.bodySupportN > 0)
           arrow(
@@ -636,6 +667,10 @@ export function canvasMountain(
           : { x: 0, y: 0, visible: false }
       if (plate || !opt.line) target.visible = false
       return {
+        loadTargets: chain
+          ? loadTargets(chain, (v) => screen(local(v)))
+          : undefined,
+        loadPath: chain,
         muscles: work,
         upper: screen(upper),
         studyPoint: screen(local(studyPoint(f, setup, p))),

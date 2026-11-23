@@ -2369,3 +2369,224 @@ body {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 }
+
+.force-mode {
+  display: flex;
+  gap: 3px;
+  margin: 7px 0;
+  padding-bottom: 4px;
+  border-bottom: 1px solid #59727466;
+}
+.force-mode button {
+  padding: 4px 7px;
+  border-radius: 4px;
+  font-size: 11px;
+  color: #c2d1d0;
+}
+.force-mode button[aria-pressed='true'] {
+  background: #314952;
+  color: #f0fbff;
+}
+.chain-readout {
+  color: #e5f0ed;
+  min-width: 0;
+}
+.chain-selects {
+  display: flex;
+  align-items: end;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+.chain-selects label {
+  flex: 1;
+  min-width: min(89px, 100%);
+  font: 500 10px var(--mono);
+  color: #c5d9d6;
+}
+.chain-selects select,
+.chain-readout select:focus-visible {
+  display: block;
+  width: 100%;
+  height: 29px;
+  margin-top: 3px;
+  padding: 0 3px;
+  border: 1px solid #597577;
+  border-radius: 4px;
+  background: #1b3039;
+  color: #f1f6ef;
+  font:
+    600 11px 'DM Sans Variable',
+    sans-serif;
+}
+.chain-phase {
+  display: flex;
+  justify-content: space-between;
+  gap: 6px;
+  margin: 8px 0 5px;
+  font-size: 10px;
+  color: #c6ddcf;
+}
+.chain-metrics {
+  margin: 0;
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 4px;
+}
+.chain-metrics > div {
+  border-radius: 4px;
+  background: #253b41;
+  padding: 5px;
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  min-width: 0;
+}
+.chain-metrics dt {
+  font-size: 10px;
+  line-height: 1.15;
+  color: #ccdbda;
+}
+.chain-metrics dd {
+  margin: 4px 0 0;
+  font: 500 11px var(--mono);
+  color: #eff9e9;
+}
+.chain-readout p,
+.chain-breakdown p {
+  font-size: 12px;
+  line-height: 1.44;
+  margin: 8px 0;
+  color: #d7e5e2;
+}
+.chain-key {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 9px;
+  font: 500 9px var(--mono);
+  color: #dce6e5;
+}
+.chain-key span::before {
+  content: '';
+  display: inline-block;
+  width: 7px;
+  height: 3px;
+  margin-right: 3px;
+  vertical-align: middle;
+  background: var(--key);
+}
+.key-left {
+  --key: #b9ec85;
+}
+.key-right {
+  --key: #67d5ff;
+}
+.key-arm {
+  --key: #f1f5db;
+}
+.key-moment {
+  --key: #d3a5ff;
+}
+.key-weight {
+  --key: #ffa66e;
+}
+.panel .chain-readout,
+.chain-experiment {
+  margin: 6px 0;
+  background: #172e35;
+  border: 1px solid #3e5960;
+  border-radius: 5px;
+  padding: 9px 11px;
+}
+.chain-experiment {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  align-items: center;
+  gap: 5px;
+  font-size: 12px;
+  color: #e6efea;
+}
+.chain-experiment input,
+.chain-experiment small {
+  grid-column: 1/-1;
+  width: 100%;
+}
+.chain-experiment small {
+  color: #c8d8d6;
+  line-height: 1.32;
+}
+.chain-breakdown {
+  margin: 15px 0 20px;
+}
+.chain-breakdown h3 {
+  font-size: 18px;
+  margin: 0;
+}
+.chain-breakdown .chain-metrics {
+  margin: 10px 0;
+}
+.chain-sources {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 5px 12px;
+  font-size: 11px;
+}
+.chain-sources a {
+  color: #b7e6d0;
+}
+.pose-study[data-layer='path'] .muscle-pin {
+  border-color: #cea4ef;
+  color: #eacbff;
+}
+.annotation.path i {
+  background: #d3a5ff;
+}
+.force-console:has(.chain-readout) .console-content {
+  overflow-y: auto;
+  max-height: min(60dvh, 520px);
+  scrollbar-width: thin;
+}
+@media (max-height: 590px) {
+  .force-console:has(.chain-readout) .console-content {
+    max-height: 46dvh;
+  }
+}
+.chain-resolve {
+  display: block;
+  margin: 7px 0 3px;
+  border: 1px solid #567176;
+  border-radius: 4px;
+  padding: 4px 7px;
+  color: #d8e6e4;
+  background: #1c3239;
+  font-size: 11px;
+}
+.chain-resolve[aria-pressed='true'] {
+  background: #25493f;
+  border-color: #69aa97;
+  color: #ddf8df;
+}
+.chain-components {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 5px;
+  margin-top: 5px;
+}
+.chain-components span {
+  font-size: 10px;
+  border-left: 3px solid #5ae4ce;
+  padding-left: 5px;
+  color: #dfefec;
+}
+.chain-components span + span {
+  border-color: #ffbb73;
+}
+.chain-components b {
+  display: block;
+  font: 500 11px var(--mono);
+}
+@media (max-width: 650px) {
+  .force-console:has(.chain-readout) .console-content {
+    max-height: clamp(156px, 29dvh, 245px);
+    overscroll-behavior: contain;
+  }
+}

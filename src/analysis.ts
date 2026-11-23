@@ -40,7 +40,7 @@ import {
 } from './physics.ts'
 
 export const lenses = ['forces', 'body', 'contact', 'muscles'] as const
-export type Lens = (typeof lenses)[number]
+export type Lens = (typeof lenses)[number] | 'path'
 export type Point3 = [number, number, number]
 export const riderMass = 75
 export const gravity = 9.81
@@ -60,9 +60,32 @@ export const scale3 = (a: Point3, s: number): Point3 => [
   a[1] * s,
   a[2] * s,
 ]
-const dot = (a: Point3, b: Point3) => a[0] * b[0] + a[1] * b[1] + a[2] * b[2]
+export const dot = (a: Point3, b: Point3) =>
+  a[0] * b[0] + a[1] * b[1] + a[2] * b[2]
 export const magnitude = (a: Point3) => Math.hypot(...a)
-const unit = (a: Point3) => scale3(a, 1 / (magnitude(a) || 1))
+export const unit = (a: Point3) => scale3(a, 1 / (magnitude(a) || 1))
+
+export const diff = (a: Point3, b: Point3) => add3(a, scale3(b, -1))
+export const cross = (a: Point3, b: Point3): Point3 => [
+  a[1] * b[2] - a[2] * b[1],
+  a[2] * b[0] - a[0] * b[2],
+  a[0] * b[1] - a[1] * b[0],
+]
+// Invert the pitch, bank and yaw used to draw the rider before combining forces with joint positions.
+export function riderVector(f: Frame, vector: Point3): Point3 {
+  const [x, y, z] = vector,
+    pitch = f.pitch * radians,
+    yaw = f.heading + f.boardYaw + bodyHeading(f)
+  const levelZ = y * Math.sin(pitch) + z * Math.cos(pitch)
+  const levelY = y * Math.cos(pitch) - z * Math.sin(pitch),
+    bank = f.bank * radians
+  const right = x * Math.cos(bank) + levelY * Math.sin(bank)
+  return [
+    right * Math.cos(yaw) + levelZ * Math.sin(yaw),
+    -x * Math.sin(bank) + levelY * Math.cos(bank),
+    -right * Math.sin(yaw) + levelZ * Math.cos(yaw),
+  ]
+}
 
 // Intersect two fixed-length segments in the limb's bend plane.
 function bendJoint(

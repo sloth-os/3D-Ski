@@ -342,6 +342,28 @@ test(
         brake.finished &&
         brake.safety.distance > 0,
     )
+    await page.goto(url + '#snowboarding/boardIndy/load-path')
+    assert.ok((await page.reload()).fromServiceWorker())
+    await lab.locator('.study-surface canvas[data-renderer="canvas"]').waitFor()
+    await lab.getByLabel('Load path segment').selectOption('boot')
+    await lab.getByRole('button', { name: 'Maneuver', exact: true }).tap()
+    const airborne = lab.locator(
+      '.chain-readout[data-phase="Airborne"][data-part="boot"]',
+    )
+    await airborne.waitFor()
+    assert.equal(await airborne.locator('dd').first().textContent(), '0 N')
+    await lab.getByRole('button', { name: 'Landing', exact: true }).tap()
+    await page.waitForFunction(
+      () =>
+        Number.parseInt(
+          document.querySelector('.chain-metrics dd')?.textContent,
+        ) > 0,
+    )
+    await lab.getByLabel('Load path segment').selectOption('waist')
+    await lab
+      .locator('.muscle-pin')
+      .filter({ hasText: 'Waist & trunk' })
+      .waitFor()
     assert.deepEqual(errors, [])
   },
 )

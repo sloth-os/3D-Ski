@@ -1,3 +1,6 @@
+import { pickLoad, type LoadTarget } from './loadDrawing.ts'
+import { LoadReadout } from './LoadReadout.tsx'
+import { loadReading, type LoadSelection, type LoadPath } from './loadPath.ts'
 import { MuscleReadout, MuscleEvidence } from './MuscleReadout.tsx'
 import { muscleGroups, type MuscleFocus, type MuscleWork } from './muscles.ts'
 import { isSafety, isFall, safetyLessons, contactOnBody } from './safety.ts'
@@ -11,6 +14,8 @@ import { canvasMountain } from './scene/canvas.ts'
 import { clamp, type Frame } from './physics.ts'
 
 export type StudyView = {
+  load: LoadSelection
+  setLoad: (s: LoadSelection) => void
   lens: Lens
   focus: MuscleFocus
   setLens: (lens: Lens) => void
@@ -38,11 +43,19 @@ export function PoseStudy({
     musclePin = useRef<HTMLSpanElement>(null),
     readout = useRef<HTMLOutputElement>(null),
     orbit = useRef(equipmentFor(setup.technique) === 'skis' ? 0.55 : -0.25),
-    pointer = useRef<{ id: number; x: number } | null>(null)
+    targets = useRef<LoadTarget[]>([]),
+    pointer = useRef<{
+      id: number
+      x: number
+      y: number
+      travel: number
+    } | null>(null)
   const [playing, setPlaying] = useState(false),
+    [tuck, setTuck] = useState(0),
+    [chain, setChain] = useState<LoadPath | null>(null),
     [sample, setSample] = useState<MuscleWork | null>(null),
     [closeUp, setCloseUp] = useState(false)
-  const { lens, setLens, focus, setFocus } = view
+  const { lens, setLens, focus, setFocus, load, setLoad } = view
   const phase = useRef(0),
     refresh = useRef(true),
     config = useRef({
@@ -50,6 +63,8 @@ export function PoseStudy({
       speed,
       playing,
       lens,
+      load,
+      tuck,
       focus,
       closeUp,
       frame,
@@ -60,6 +75,8 @@ export function PoseStudy({
     speed,
     playing,
     lens,
+    load,
+    tuck,
     focus,
     closeUp,
     frame,
@@ -67,7 +84,7 @@ export function PoseStudy({
   }
   useEffect(() => {
     refresh.current = true
-  }, [angle, speed, lens, focus, playing, closeUp, frame, switched])
+  }, [angle, speed, lens, load, tuck, focus, playing, closeUp, frame, switched])
   useEffect(() => {
     const host = mount.current!
     let dead = false,
@@ -100,17 +117,20 @@ export function PoseStudy({
           const f =
             opt.frame ??
             idealTurn(setup, opt.angle, opt.speed, phase.current, opt.switched)
+          // Only alter the dedicated turn experiment. Recorded replay frames are shared with scoring.
+          if (!opt.frame && opt.lens === 'path') f.tuck = opt.tuck / 100
           const projection = view!.draw(f, {
             camera: opt.closeUp ? 'edge' : 'side',
             lens: opt.lens,
             muscle: opt.focus,
+            load: opt.load,
             forces: true,
             line: false,
             orbit: orbit.current,
             tilt: 0.045,
             zoom: opt.closeUp
               ? 1.05
-              : opt.lens === 'muscles'
+              : opt.lens === 'muscles' || opt.lens === 'path'
                 ? 0.7
                 : opt.frame
                   ? 0.85
@@ -118,6 +138,7 @@ export function PoseStudy({
             preview: false,
             reduced: true,
           })
+          targets.current = projection.loadTargets ?? []
           const work = projection.muscles
           if (work && musclePin.current) {
             const id = opt.focus === 'auto' ? work.primary : opt.focus
@@ -135,6 +156,22 @@ export function PoseStudy({
             )
             if (!opt.playing || now - lastReadout >= 90 || refresh.current) {
               setSample(work)
+              lastReadout = now
+            }
+          }
+          if (projection.loadPath && musclePin.current) {
+            const r = loadReading(projection.loadPath, opt.load),
+              pin = musclePin.current,
+              at = projection.upper
+            pin.hidden = !at.visible
+            pin.style.left = at.x * 100 + '%'
+            pin.style.top = at.y * 100 + '%'
+            pin.textContent = r.title + ' · ' + r.annotation
+            pin.dataset.flip = String(
+              at.x * host.clientWidth > host.clientWidth - pin.offsetWidth - 18,
+            )
+            if (!opt.playing || now - lastReadout >= 90 || refresh.current) {
+              setChain(projection.loadPath)
               lastReadout = now
             }
           }
@@ -159,6 +196,7 @@ export function PoseStudy({
                 : projection.lower
             label.hidden =
               !at.visible ||
+              opt.lens === 'path' ||
               (!useStudyPoint &&
                 ((opt.lens !== 'body' && opt.lens !== 'muscles') ||
                   f.air.pose < 0.99))
@@ -217,19 +255,43 @@ export function PoseStudy({
           }
           onPointerDown={(e) => {
             e.currentTarget.setPointerCapture(e.pointerId)
-            pointer.current = { id: e.pointerId, x: e.clientX }
+            pointer.current = {
+              id: e.pointerId,
+              x: e.clientX,
+              y: e.clientY,
+              travel: 0,
+            }
           }}
           onPointerMove={(e) => {
             const d = pointer.current
             if (d && d.id === e.pointerId) {
+              d.travel += Math.hypot(e.clientX - d.x, e.clientY - d.y)
+              d.y = e.clientY
               orbit.current += (e.clientX - d.x) * 0.008
               d.x = e.clientX
               refresh.current = true
             }
           }}
+          onPointerUp={(e) => {
+            if (
+              lens === 'path' &&
+              pointer.current?.id === e.pointerId &&
+              pointer.current.travel < 6
+            )
+              setLoad(
+                pickLoad(
+                  targets.current,
+                  e.currentTarget.getBoundingClientRect(),
+                  e.clientX,
+                  e.clientY,
+                  load,
+                ),
+              )
+            pointer.current = null
+          }}
           onLostPointerCapture={() => (pointer.current = null)}
         />
-        {lens === 'muscles' && (
+        {(lens === 'muscles' || lens === 'path') && (
           <span className="muscle-pin" ref={musclePin} hidden />
         )}
         {(grip || switched !== undefined || safetyMark) && (
@@ -295,9 +357,30 @@ export function PoseStudy({
             <option value="body">Body joints</option>
             <option value="contact">Snow contact</option>
             <option value="forces">Force vectors</option>
+            <option value="path">Load path</option>
           </select>
         </div>
       </div>
+      {lens === 'path' && !frame && (
+        <label className="chain-experiment">
+          Torso tuck <span aria-hidden="true">{tuck}%</span>
+          <input
+            type="range"
+            aria-label="Torso tuck"
+            min="0"
+            max="100"
+            value={tuck}
+            onChange={(e) => setTuck(+e.target.value)}
+          />
+          <small>
+            Keep speed and edge angle fixed. Move the torso to compare its
+            weight moment about the waist.
+          </small>
+        </label>
+      )}
+      {lens === 'path' && chain && (
+        <LoadReadout model={chain} selection={load} change={setLoad} />
+      )}
       {lens === 'muscles' && sample && (
         <>
           <MuscleReadout

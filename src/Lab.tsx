@@ -1,3 +1,4 @@
+import { defaultLoad, type LoadSelection } from './loadPath.ts'
 import {
   sportNames,
   sportFor,
@@ -45,10 +46,12 @@ export function Lab({
   id,
   select,
   practice,
+  initialPath,
   units,
 }: {
   setup: Setup
   id: TechniqueId
+  initialPath: boolean
   select: (id: TechniqueId) => void
   practice: (
     id: TechniqueId,
@@ -57,12 +60,14 @@ export function Lab({
     lens: Lens,
     focus: MuscleFocus,
     course: CourseId,
+    selection: LoadSelection,
   ) => void
   units: Prefs['units']
 }) {
-  const [lens, setLens] = useState<Lens>('muscles'),
+  const [lens, setLens] = useState<Lens>(initialPath ? 'path' : 'muscles'),
     [focus, setFocus] = useState<MuscleFocus>('auto')
-  const view = { lens, setLens, focus, setFocus }
+  const [load, setLoad] = useState<LoadSelection>(defaultLoad)
+  const view = { lens, setLens, focus, setFocus, load, setLoad }
   const [course, setCourse] = useState(setup.course)
   const [angle, setAngle] = useState(32),
     [speed, setSpeed] = useState(28)
@@ -78,14 +83,14 @@ export function Lab({
     )
   const f = idealTurn(study, angle, speed),
     board = equipmentFor(id) === 'snowboard'
-  const load = board ? 100 * analyse(f, study).firstShare : f.load,
+  const footLoad = board ? 100 * analyse(f, study).firstShare : f.load,
     r = f.radius,
     a = f.lateralAccel
   const actions = (
     <div className="lesson-actions">
       <button
         className="primary"
-        onClick={() => practice(id, false, stopEdge, lens, focus, course)}
+        onClick={() => practice(id, false, stopEdge, lens, focus, course, load)}
       >
         <Play size={16} fill="currentColor" />
         {isSafety(id)
@@ -101,7 +106,7 @@ export function Lab({
       </button>
       <button
         className="outline-btn"
-        onClick={() => practice(id, true, stopEdge, lens, focus, course)}
+        onClick={() => practice(id, true, stopEdge, lens, focus, course, load)}
       >
         Watch demo
       </button>
@@ -233,7 +238,7 @@ export function Lab({
               </div>
               <div>
                 <span>{board ? 'Front binding' : 'Outside ski'}</span>
-                <b>{Math.round(load)}%</b>
+                <b>{Math.round(footLoad)}%</b>
               </div>
             </div>
             <p className="fine-print">

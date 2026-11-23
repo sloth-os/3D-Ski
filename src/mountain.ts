@@ -1,3 +1,6 @@
+import { defaultLoad, loadPath } from './loadPath.ts'
+import { loadDrawing, loadTargets } from './loadDrawing.ts'
+import { makeLoadOverlay } from './scene/loadPath.ts'
 import { isSafety } from './safety.ts'
 import { bodyHeading } from './air.ts'
 import * as THREE from 'three'
@@ -261,6 +264,7 @@ export function createMountain(
   scene.add(directionMark)
   const skier = skierModel(setup)
   scene.add(skier.root)
+  let loadOverlay: ReturnType<typeof makeLoadOverlay> | undefined
   const muscles = makeMuscles(skier.root)
   const spray = makeSpray(setup.surface, board)
   scene.add(spray.points)
@@ -355,6 +359,20 @@ export function createMountain(
       skier.pose(f, pose, opt.camera === 'first', anatomy)
       skier.root.updateMatrixWorld(true)
       lens.update(skier.root, pose, forces, opt.lens, opt.forces, board)
+      const chain =
+        opt.lens === 'path' && opt.forces && opt.camera !== 'first'
+          ? loadPath(f, setup, pose, forces)
+          : undefined
+      if (chain) {
+        loadOverlay ??= makeLoadOverlay(skier.root)
+        const drawing = loadDrawing(chain, opt.load ?? defaultLoad)
+        loadOverlay.draw(drawing)
+        lens.upper.fromArray(drawing.at).applyMatrix4(skier.root.matrixWorld)
+        lens.lower
+          .fromArray(drawing.secondary)
+          .applyMatrix4(skier.root.matrixWorld)
+      }
+      if (loadOverlay) loadOverlay.group.visible = !!chain
       let work
       if (anatomy) {
         work = muscleWork(f, setup, pose, forces)
@@ -408,6 +426,12 @@ export function createMountain(
       if (plate || !opt.line) g.visible = false
       camera.getWorldDirection(dest)
       return {
+        loadTargets: chain
+          ? loadTargets(chain, (v) =>
+              project(aim.fromArray(v).applyMatrix4(skier.root.matrixWorld)),
+            )
+          : undefined,
+        loadPath: chain,
         muscles: work,
         upper: project(lens.upper),
         studyPoint: project(

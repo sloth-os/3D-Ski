@@ -1,3 +1,5 @@
+import { LoadReadout, LoadBreakdown } from './LoadReadout.tsx'
+import { loadPath, type LoadSelection } from './loadPath.ts'
 import { TerrainProfile } from './TerrainProfile.tsx'
 import { MuscleReadout, MuscleEvidence } from './MuscleReadout.tsx'
 import {
@@ -161,6 +163,8 @@ export function InstrumentPanel({
   prefs,
   lens,
   setLens,
+  load,
+  setLoad,
   muscle,
   setMuscle,
   toggle,
@@ -171,6 +175,8 @@ export function InstrumentPanel({
   prefs: Prefs
   lens: Lens
   setLens: (v: Lens) => void
+  load: LoadSelection
+  setLoad: (s: LoadSelection) => void
   muscle: MuscleFocus
   setMuscle: (v: MuscleFocus) => void
   toggle: () => void
@@ -274,14 +280,41 @@ export function InstrumentPanel({
             {lenses.map((v) => (
               <button
                 key={v}
-                aria-pressed={v === lens}
+                aria-pressed={v === lens || (lens === 'path' && v === 'forces')}
                 onClick={() => setLens(v)}
               >
                 {v.charAt(0).toUpperCase() + v.slice(1)}
               </button>
             ))}
           </div>
-          {lens === 'muscles' ? (
+          {(lens === 'forces' || lens === 'path') && (
+            <div className="force-mode" aria-label="Force display">
+              <button
+                aria-pressed={lens === 'forces'}
+                onClick={() => setLens('forces')}
+              >
+                External vectors
+              </button>
+              <button
+                aria-pressed={lens === 'path'}
+                onClick={() => setLens('path')}
+              >
+                Load path
+              </button>
+            </div>
+          )}
+          {lens === 'path' ? (
+            <>
+              <LoadReadout
+                model={loadPath(frame, setup, p, a)}
+                selection={load}
+                change={setLoad}
+              />
+              <button className="muscle-inspect" onClick={details}>
+                Inspect this frame
+              </button>
+            </>
+          ) : lens === 'muscles' ? (
             <>
               <MuscleReadout
                 work={muscleWork(frame, setup, p, a)}
@@ -354,11 +387,20 @@ export function InstrumentPanel({
     </aside>
   )
 }
-export function FrameInspector({ f, setup }: { f: Frame; setup: Setup }) {
+export function FrameInspector({
+  f,
+  setup,
+  pathFirst = false,
+}: {
+  f: Frame
+  setup: Setup
+  pathFirst?: boolean
+}) {
   const a = analyse(f, setup),
     p = riderPose(f, setup),
     work = muscleWork(f, setup, p, a),
     board = equipmentFor(setup.technique) === 'snowboard'
+  const breakdown = <LoadBreakdown m={loadPath(f, setup, p, a)} />
   return (
     <div className="frame-inspector">
       <p className="modal-intro">
@@ -367,6 +409,7 @@ export function FrameInspector({ f, setup }: { f: Frame; setup: Setup }) {
         together in the world. Components below use right, up, and uphill as
         positive axes.
       </p>
+      {pathFirst && breakdown}
       <table>
         <caption>Forces in newtons</caption>
         <thead>
@@ -451,6 +494,7 @@ export function FrameInspector({ f, setup }: { f: Frame; setup: Setup }) {
           </div>
         ))}
       </div>
+      {!pathFirst && breakdown}
       <table className="muscle-table">
         <caption>Muscle demand · {work.phase}</caption>
         <thead>

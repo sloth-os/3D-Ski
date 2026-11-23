@@ -1,3 +1,5 @@
+import type { LoadTarget } from './loadDrawing.ts'
+import type { LoadSelection, LoadPath } from './loadPath.ts'
 export const cameras = [
   { id: 'chase', name: 'Chase', description: 'Follow the rider from behind.' },
   {
@@ -35,6 +37,7 @@ export type ViewOptions = {
   line: boolean
   forces: boolean
   lens: Lens
+  load?: LoadSelection
   muscle?: MuscleFocus
   orbit: number
   tilt: number
@@ -44,6 +47,8 @@ export type ViewOptions = {
 }
 export type ScreenPoint = { x: number; y: number; visible: boolean }
 export type Projection = {
+  loadTargets?: LoadTarget[]
+  loadPath?: LoadPath
   muscles?: MuscleWork
   studyPoint: ScreenPoint
   upper: ScreenPoint

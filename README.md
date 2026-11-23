@@ -104,6 +104,24 @@ Press **V** or tap the stance to pivot once on the snow. The base flattens as th
 - **Contact** shows two ski contact patches or two loading regions on one snowboard edge. Compare normal load, sliding resistance, estimated contact pressure, and the left/right ski or front/rear binding split.
 - **Skiing** and **Snowboarding** provide lesson phases, a drill, and a draggable 3D rider. Change speed and peak edge angle, link successive turns, or inspect the bindings in close-up. The terrain profile samples course elevation, local pitch, and the downhill component of gravity.
 
+### Following the load from snow to upper body
+
+Open **Force analysis → Forces → Load path** on the mountain. In a lesson, choose **Load path** in the 3D study layer menu. Tap a joint on the rider or use **Inspect** to select a segment. **Heavier foot** follows the load through linked turns. Selecting a specific foot keeps that anatomical side in focus, including when riding switch. Green follows the left branch and blue follows the right. [Explore a ski carve](https://sloth-os.github.io/3D-Ski/#skiing/carve/load-path) · [Explore a snowboard carve](https://sloth-os.github.io/3D-Ski/#snowboarding/boardCarve/load-path)
+
+| Inspect | What to compare |
+| --- | --- |
+| Snow surface | Colored traces locate the ski or board contacts. Opposed arrows show the action and reaction there. Compare support perpendicular to the snow, shear along it, and average equipment contact pressure. |
+| Skis or snowboard and bindings | Ski contacts have separate equipment branches. On a board, both binding regions share one deck. Observe how the contact moves relative to a binding. |
+| Boot and ankle | Follow the binding force to the boot. The white perpendicular from the ankle to the force line is its moment arm. The violet arc shows the direction of the external moment. |
+| Leg and knee | Compare the knee angle and its moment at the same instant. The frame inspector resolves the snow force along and across the shin and relative to the boot sole. |
+| Hip and pelvis | Follow each thigh to its hip. Moving the pelvis changes the hip’s distance from the force line. |
+| Waist and trunk | Both leg branches contribute to the snow moment about the waist. During a fall, the orange direct body-contact branch contributes too. The torso–pelvis reading shows their relative rotation. |
+| Upper body | The orange arrow shows the weight of the head, trunk and arms at their estimated common centre of mass. In a turn lesson, move **Torso tuck** while holding turn speed and edge angle steady. Compare the weight moment about the waist. |
+
+**Resolve force components** draws two arrows tip to tail. At the snow they show normal support and shear. At a boot they follow the sole, and at a joint they resolve the force along and across the shin, thigh or trunk. A negative axial reading points back down that axis. **Inspect this frame** freezes the reading and compares both sides. Moments use the vector from each joint to the contact point crossed with that foot’s share of the snow reaction. The model splits tangential force in proportion to normal support. The upper-body calculation uses reference segment mass fractions, approximate segment centres, and the actual animated arm and trunk positions. The analysis reports external forces and moments. Estimating internal joint forces, muscle tension or cuff pressure requires additional measurements. [OpenStax on contact pairs](https://openstax.org/books/university-physics-volume-1/pages/5-5-newtons-third-law) · [OpenStax on torque](https://openstax.org/books/university-physics-volume-1/pages/10-6-torque) · [de Leva on segment inertia](https://doi.org/10.1016/0021-9290(95)00178-6)
+
+Scrub an Indy grab from flight to landing to see the equipment branches unload and take weight again. In a fall replay, watch support move from the equipment onto the body. [Snowboard jump](https://sloth-os.github.io/3D-Ski/#snowboarding/boardIndy/load-path) · [Ski fall](https://sloth-os.github.io/3D-Ski/#skiing/skiFall/load-path)
+
 ### How muscles work
 
 Every lesson opens with **Muscle demand** selected on the 3D rider. Orbit to see the quadriceps and shins in front, the hamstrings and calves behind, or the hip adductors, gluteals, hip flexors, spinal extensors, obliques, and deltoids. **Muscle focus** can follow the movement or isolate a group. Each side has its own light, moderate, or high demand reading. Starting practice or a demo carries that view onto the mountain.

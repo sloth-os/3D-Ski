@@ -27,7 +27,8 @@ export const lessonFor = (sport: Sport, preferred: TechniqueId) =>
     : sport === 'skiing'
       ? 'skiStop'
       : 'boardStop'
-export const lessonPath = (id: TechniqueId) => '#' + sportFor(id) + '/' + id
+export const lessonPath = (id: TechniqueId, path = false) =>
+  '#' + sportFor(id) + '/' + id + (path ? '/load-path' : '')
 
 // Bookmarks from the original four libraries still resolve to the same lessons.
 export function resolveLesson(

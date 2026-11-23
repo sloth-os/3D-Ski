@@ -1,3 +1,5 @@
+import { pickLoad, type LoadTarget } from './loadDrawing.ts'
+import { loadPath, loadReading, type LoadSelection } from './loadPath.ts'
 import { useEffect, useRef, type RefObject } from 'react'
 import { Flag } from 'lucide-react'
 import { courses, equipmentFor, type Setup } from './course.ts'
@@ -77,6 +79,8 @@ type Props = {
   prefs: Prefs
   camera: CameraMode
   lens: Lens
+  load: LoadSelection
+  setLoad: (s: LoadSelection) => void
   muscle: MuscleFocus
   blocked: boolean
   compassRef: RefObject<HTMLCanvasElement | null>
@@ -90,6 +94,8 @@ export function Viewport({
   camera,
   lens,
   muscle,
+  load,
+  setLoad,
   blocked,
   compassRef,
   resetView,
@@ -99,17 +105,29 @@ export function Viewport({
     upper = useRef<HTMLDivElement>(null),
     lower = useRef<HTMLDivElement>(null),
     gate = useRef<HTMLDivElement>(null)
+  const targets = useRef<LoadTarget[]>([])
   const hand = useRef({ orbit: 0, tilt: 0, zoom: 1 }),
-    drag = useRef<{ id: number; x: number; y: number } | null>(null)
+    drag = useRef<{ id: number; x: number; y: number; travel: number } | null>(
+      null,
+    )
   const config = useRef({
     camera,
+    load,
     lens,
     muscle,
     prefs,
     phase: run.phase,
     blocked,
   })
-  config.current = { camera, lens, muscle, prefs, phase: run.phase, blocked }
+  config.current = {
+    camera,
+    load,
+    lens,
+    muscle,
+    prefs,
+    phase: run.phase,
+    blocked,
+  }
   const { ready, current } = run
   useEffect(() => {
     hand.current = { orbit: 0, tilt: 0, zoom: 1 }
@@ -146,6 +164,7 @@ export function Viewport({
             camera: cfg.camera,
             lens: cfg.lens,
             muscle: cfg.muscle,
+            load: cfg.load,
             forces: cfg.prefs.forces,
             line: cfg.prefs.line,
             ...hand.current,
@@ -153,6 +172,7 @@ export function Viewport({
             reduced: reduced.matches,
           }
           const result = view!.draw(current.current, options)
+          targets.current = result.loadTargets ?? []
           const labels =
             cfg.prefs.forces &&
             !cfg.blocked &&
@@ -201,48 +221,55 @@ export function Viewport({
     board = equipmentFor(setup.technique) === 'snowboard'
   const work = lens === 'muscles' ? muscleWork(f, setup, p, a) : null
   const id = muscle === 'auto' ? (work?.primary ?? 'quads') : muscle
-  const labels = work
-    ? work.limbs.map((l, i) => [
-        (i ? 'Right ' : 'Left ') + muscleGroups[id][0].toLowerCase(),
-        effortNames[effortBand(l.levels[id])] + ' demand',
-      ])
-    : lens === 'forces'
-      ? [
-          f.air.phase === 'flight'
-            ? ['Air drag', Math.round(a.dragN) + ' N']
-            : ['Snow reaction', Math.round(a.reactionN) + ' N'],
-          ['Gravity', Math.round(a.weightN) + ' N'],
-        ]
-      : lens === 'body'
+  const reading =
+    lens === 'path' ? loadReading(loadPath(f, setup, p, a), load) : null
+  const labels = reading
+    ? [
+        [reading.title, reading.annotation],
+        [reading.secondary, reading.secondaryValue],
+      ]
+    : work
+      ? work.limbs.map((l, i) => [
+          (i ? 'Right ' : 'Left ') + muscleGroups[id][0].toLowerCase(),
+          effortNames[effortBand(l.levels[id])] + ' demand',
+        ])
+      : lens === 'forces'
         ? [
-            ['Center of mass', p.comHeight.toFixed(2) + ' m'],
-            p.grab?.engaged
-              ? [
-                  'Grab contact',
-                  (p.grab.hand === 1 ? 'Right hand' : 'Left hand') +
-                    ' · ' +
-                    p.grab.target,
-                ]
-              : ['Knee flexion', Math.round(p.legs[p.outside].angle) + '°'],
+            f.air.phase === 'flight'
+              ? ['Air drag', Math.round(a.dragN) + ' N']
+              : ['Snow reaction', Math.round(a.reactionN) + ' N'],
+            ['Gravity', Math.round(a.weightN) + ' N'],
           ]
-        : [
-            [
-              board
-                ? f.air.switch
-                  ? 'Trailing · nose'
-                  : 'Front binding'
-                : 'Left ski',
-              Math.round(a.contacts[0]) + ' N',
-            ],
-            [
-              board
-                ? f.air.switch
-                  ? 'Leading · tail'
-                  : 'Rear binding'
-                : 'Right ski',
-              Math.round(a.contacts[1]) + ' N',
-            ],
-          ]
+        : lens === 'body'
+          ? [
+              ['Center of mass', p.comHeight.toFixed(2) + ' m'],
+              p.grab?.engaged
+                ? [
+                    'Grab contact',
+                    (p.grab.hand === 1 ? 'Right hand' : 'Left hand') +
+                      ' · ' +
+                      p.grab.target,
+                  ]
+                : ['Knee flexion', Math.round(p.legs[p.outside].angle) + '°'],
+            ]
+          : [
+              [
+                board
+                  ? f.air.switch
+                    ? 'Trailing · nose'
+                    : 'Front binding'
+                  : 'Left ski',
+                Math.round(a.contacts[0]) + ' N',
+              ],
+              [
+                board
+                  ? f.air.switch
+                    ? 'Leading · tail'
+                    : 'Rear binding'
+                  : 'Right ski',
+                Math.round(a.contacts[1]) + ' N',
+              ],
+            ]
   return (
     <div className="world" aria-label="Interactive mountain">
       <img
@@ -257,13 +284,19 @@ export function Viewport({
         aria-label="3D slope. Drag to orbit and scroll to zoom."
         onPointerDown={(e) => {
           if (blocked || camera === 'first') return
-          drag.current = { id: e.pointerId, x: e.clientX, y: e.clientY }
+          drag.current = {
+            id: e.pointerId,
+            x: e.clientX,
+            y: e.clientY,
+            travel: 0,
+          }
           e.currentTarget.setPointerCapture(e.pointerId)
           e.currentTarget.focus({ preventScroll: true })
         }}
         onPointerMove={(e) => {
           const d = drag.current
           if (!d || d.id !== e.pointerId) return
+          d.travel += Math.hypot(e.clientX - d.x, e.clientY - d.y)
           hand.current.orbit += (e.clientX - d.x) * 0.006
           hand.current.tilt = clamp(
             hand.current.tilt + (e.clientY - d.y) * 0.003,
@@ -273,7 +306,22 @@ export function Viewport({
           d.x = e.clientX
           d.y = e.clientY
         }}
-        onPointerUp={() => {
+        onPointerUp={(e) => {
+          if (
+            lens === 'path' &&
+            prefs.forces &&
+            drag.current?.id === e.pointerId &&
+            drag.current.travel < 6
+          )
+            setLoad(
+              pickLoad(
+                targets.current,
+                e.currentTarget.getBoundingClientRect(),
+                e.clientX,
+                e.clientY,
+                load,
+              ),
+            )
           drag.current = null
         }}
         onPointerCancel={() => {
