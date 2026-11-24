@@ -364,6 +364,24 @@ test(
       .locator('.muscle-pin')
       .filter({ hasText: 'Waist & trunk' })
       .waitFor()
+    await page.goto(url + '#snowboarding/level-ii/torsional-release')
+    assert.ok((await page.reload()).fromServiceWorker())
+    await lab.locator('.study-surface canvas[data-renderer="canvas"]').waitFor()
+    await lab.getByRole('button', { name: 'New edge', exact: true }).tap()
+    const ruler = lab.getByRole('row').filter({ hasText: 'Lead tilt' })
+    assert.equal(await ruler.getByRole('cell').count(), 3)
+    await lab.getByLabel('Apply coaching cue').selectOption('0')
+    assert.equal(
+      await ruler.getByRole('cell').nth(1).textContent(),
+      await ruler.getByRole('cell').nth(2).textContent(),
+    )
+    await page.setViewportSize({ width: 320, height: 750 })
+    assert.ok(await lab.evaluate((el) => el.scrollWidth <= el.clientWidth + 1))
+    await lab.getByRole('button', { name: 'Skiing', exact: true }).tap()
+    assert.equal(
+      await lab.getByLabel('Training station').locator('option').count(),
+      10,
+    )
     assert.deepEqual(errors, [])
   },
 )

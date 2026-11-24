@@ -3,7 +3,7 @@ import { shoulderLook, boardHeadYaw } from '../air.ts'
 import { equipmentFor, type Setup } from '../course.ts'
 import { type Frame } from '../physics.ts'
 import { type RiderPose, type Point3 } from '../analysis.ts'
-import { makeDeck } from './equipment.ts'
+import { makeDeck, flexDeck } from './equipment.ts'
 
 function shellTexture() {
   const canvas = document.createElement('canvas')
@@ -228,15 +228,19 @@ export function skierModel(setup: Setup) {
     bulb(head, sole, [side * 0.054, 0.174, -0.005], [0.016, 0.008, 0.045])
   }
   const sharedBoard = board ? new THREE.Group() : null
+  let deform: ReturnType<typeof flexDeck> | undefined
   if (sharedBoard) {
     root.add(sharedBoard)
-    sharedBoard.add(makeDeck(true, 1))
+    const deck = makeDeck(true, 1)
+    sharedBoard.add(deck)
+    if (setup.station === 'torsional-release') deform = flexDeck(deck)
   }
   const limbs = ([-1, 1] as const).map((side) => {
     const platform = new THREE.Group(),
       foot = new THREE.Group()
     if (sharedBoard) {
       sharedBoard.add(foot)
+      foot.rotation.order = 'ZYX'
       foot.position.z = side * 0.28
       foot.rotation.y = side < 0 ? -1.27 : -1.71
     } else {
@@ -272,6 +276,7 @@ export function skierModel(setup: Setup) {
       : null
     return {
       side,
+      foot,
       platform,
       shin,
       thigh,
@@ -305,13 +310,15 @@ export function skierModel(setup: Setup) {
       p.lean * 0.13,
     )
     if (sharedBoard) {
-      const deck = p.legs[0].deck
+      const deck = p.boardDeck
+      deform?.(p.boardTorsion)
       sharedBoard.position.fromArray(deck.origin)
       sharedBoard.rotation.set(deck.pitch, deck.yaw, deck.roll, 'YXZ')
     }
     limbs.forEach((l, i) => {
       const leg = p.legs[i],
         arm = p.arms[i]
+      if (deform) l.foot.rotation.z = leg.side * p.boardTorsion
       if (!board) {
         l.platform.position.fromArray(leg.deck.origin)
         l.platform.rotation.set(

@@ -129,3 +129,28 @@ export function makeDeck(board: boolean, side: number) {
   mesh.castShadow = true
   return mesh
 }
+
+// Spread the relative foot roll along the deck, with constant tilt outside the bindings.
+export function flexDeck(mesh: ReturnType<typeof makeDeck>) {
+  const geometry = mesh.geometry,
+    vertices = geometry.getAttribute('position')
+  const rest = Float32Array.from(vertices.array)
+  let previous = 0
+  return (torsion: number) => {
+    if (torsion === previous) return
+    previous = torsion
+    for (let i = 0; i < vertices.count; i++) {
+      const x = rest[i * 3],
+        y = rest[i * 3 + 1],
+        z = rest[i * 3 + 2]
+      const a = torsion * Math.max(-1, Math.min(1, z / 0.28))
+      vertices.setXY(
+        i,
+        x * Math.cos(a) - y * Math.sin(a),
+        x * Math.sin(a) + y * Math.cos(a),
+      )
+    }
+    vertices.needsUpdate = true
+    geometry.computeVertexNormals()
+  }
+}

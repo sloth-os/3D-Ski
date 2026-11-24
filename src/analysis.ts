@@ -1,3 +1,4 @@
+import { christieWedge, footTwist } from './levelPractice.ts'
 import { bankAt, slopeAxes } from './slope.ts'
 import {
   contactOnBody,
@@ -200,6 +201,14 @@ export function riderPose(f: Frame, setup: Setup) {
           : 0) *
         grabAmount,
   }
+  const boardTorsion =
+    setup.station === 'torsional-release' ? footTwist(f) * radians : 0
+  const wedgeSpread =
+    setup.station === 'wedge-christie'
+      ? christieWedge(f)
+      : id === 'wedge'
+        ? 0.18
+        : 0.008
   const base: Point3 = [
     lateral - (board ? 0.2 * grabAmount : 0),
     0.935 -
@@ -241,10 +250,20 @@ export function riderPose(f: Frame, setup: Setup) {
       board || flying ? 0 : (side * 0.12 * f.lookSide * (1 - facing)) / 2
     const skiPitch = press * 0.31,
       twist = -1.04 * shifty
+    let skiRoll = wedgeStop ? side * 0.24 * f.brake : -roll
+    if (
+      setup.station === 'gliding-wedge' ||
+      setup.station === 'wedge-christie'
+    ) {
+      // An inside ski in a wedge releases its inside edge and rolls onto the matching edge.
+      const opening = clamp(wedgeSpread / 0.18, 0, 1)
+      const wedgeEdge = side * (0.14 + Math.max(0, -side * roll))
+      skiRoll += (wedgeEdge - skiRoll) * opening
+    }
     const origin: Point3 = [
       baseX * Math.cos(twist),
       0.031 +
-        half * Math.abs(Math.sin(wedgeStop ? 0.24 * f.brake : roll)) +
+        half * Math.abs(Math.sin(skiRoll)) +
         0.85 * Math.abs(Math.sin(skiPitch)) +
         lift +
         (side > 0 ? 0.18 : 0.018) * grabAmount +
@@ -252,24 +271,22 @@ export function riderPose(f: Frame, setup: Setup) {
       z - baseX * Math.sin(twist) + stagger,
     ]
     const deck: RigidTransform = board
-      ? boardDeck
+      ? boardTorsion
+        ? { ...boardDeck, roll: boardDeck.roll + side * boardTorsion }
+        : boardDeck
       : {
           origin,
           pitch: skiPitch,
           yaw: wedgeStop
             ? side * wedgeYaw(f.brake)
             : twist +
-              side *
-                (((id === 'wedge' ? 0.18 : 0.008) + f.brake * 0.33) * facing +
-                  0.53 * crossed),
-          roll: wedgeStop ? side * 0.24 * f.brake : -roll,
+              side * ((wedgeSpread + f.brake * 0.33) * facing + 0.53 * crossed),
+          roll: skiRoll,
         }
     const ankle = deckPoint(deck, [0, 0.148, board ? z : 0])
     const contact: Point3 = [
       baseX +
-        (wedgeStop ? -side : Math.sign(roll)) *
-          half *
-          Math.cos(wedgeStop ? 0.24 * f.brake : roll),
+        (wedgeStop ? -side : -Math.sign(skiRoll)) * half * Math.cos(skiRoll),
       0.022 + lift,
       board
         ? z * (1 - 0.8 * Math.abs(press)) + 0.65 * press
@@ -388,6 +405,8 @@ export function riderPose(f: Frame, setup: Setup) {
   return {
     base,
     torso,
+    boardDeck,
+    boardTorsion,
     guard,
     scan: uphillLook(f),
     bodyContact: [base[0], 0.027, base[2]] as Point3,

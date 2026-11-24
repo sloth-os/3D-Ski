@@ -1,3 +1,4 @@
+import { isTape } from './stationTape.ts'
 import { isSafety, safetyPhases } from './safety.ts'
 import { isSetup, type Setup, defaultSetup } from './course.ts'
 import type { Run } from './physics.ts'
@@ -45,6 +46,12 @@ export function initialLog(): Run[] {
         (r): r is Run =>
           !!r &&
           isSetup(r.setup) &&
+          (r.stationTape === undefined ||
+            (r.setup.station && isTape(r.stationTape))) &&
+          (r.stationValue === undefined ||
+            (r.setup.station &&
+              Number.isFinite(r.stationValue) &&
+              r.stationValue >= 0)) &&
           (r.safety === undefined ||
             (isSafety(r.setup.technique) &&
               r.safety !== null &&

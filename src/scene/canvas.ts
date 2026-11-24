@@ -1,3 +1,4 @@
+import { clamp } from '../slope.ts'
 import { defaultLoad, loadPath } from '../loadPath.ts'
 import { loadDrawing, loadTargets } from '../loadDrawing.ts'
 import { canvasSnowfield } from './canvasTerrain.ts'
@@ -76,8 +77,28 @@ export function canvasMountain(
     !study && course.form !== 'piste' ? canvasSnowfield(course, at) : null
   const stages = courseStages(course).slice(1)
   const arc = replay
-    ?.filter((s) => s.air.phase === 'flight')
+    ?.filter((s, i) => (setup.station ? i % 3 === 0 : s.air.phase === 'flight'))
     .map((s) => at(s.x, s.d, s.air.height + 0.045))
+  const replayTracks =
+    setup.station && replay
+      ? (board ? [0] : [-0.192, 0.192]).map((offset) =>
+          replay
+            .filter((_, i) => i % 4 === 0)
+            .map((f) => ({
+              point: at(
+                f.x + Math.cos(f.heading) * offset,
+                f.d - Math.sin(f.heading) * offset,
+                0.031,
+              ),
+              width:
+                f.air.phase === 'flight'
+                  ? 0
+                  : board
+                    ? 0.105 + 0.09 * f.slip
+                    : 0.037 + 0.044 * f.slip,
+            })),
+        )
+      : []
   const tracks: (Point3 | null)[][] = board ? [[]] : [[], []]
   let lastDistance = -1
   return {
@@ -353,6 +374,16 @@ export function canvasMountain(
             )
         }
       }
+      for (const track of replayTracks)
+        for (let i = 1; i < track.length; i++) {
+          if (track[i].width && track[i - 1].width)
+            stroke(
+              track[i - 1].point,
+              track[i].point,
+              '#7898aa85',
+              2 * track[i].width,
+            )
+        }
       if (arc)
         for (let i = 1; i < arc.length; i += 2)
           stroke(arc[i - 1], arc[i], '#d2ef9a', 0.013)
@@ -401,7 +432,19 @@ export function canvasMountain(
         if (board && leg.side === 1) continue
         const half = board ? 0.15 : 0.062
         const deck = (s: number, z: number, y = 0): Point3 =>
-          local(deckPoint(leg.deck, [s * half, y, z]))
+          local(
+            deckPoint(
+              board
+                ? {
+                    ...p.boardDeck,
+                    roll:
+                      p.boardDeck.roll +
+                      p.boardTorsion * clamp(z / 0.28, -1, 1),
+                  }
+                : leg.deck,
+              [s * half, y, z],
+            ),
+          )
         const vertices = (ring: number[][], color: string) => {
           const points = ring.map(([x, z, y]) => project(deck(x, z, y)))
           if (points.some((q) => q.depth < 0.06)) return

@@ -1,3 +1,14 @@
+import { recordControls, type StationTape } from './stationTape.ts'
+import { findStation } from './levelTwo.ts'
+import {
+  advanceStation,
+  goalReached,
+  freshProgress,
+  stationInput,
+  christieWedge,
+  footTwist,
+  type StationProgress,
+} from './levelPractice.ts'
 import {
   courses,
   equipmentFor,
@@ -67,6 +78,8 @@ export const neutralInput: Input = {
 }
 export type Gate = { d: number; x: number; width: number }
 export type Frame = {
+  stationTape?: StationTape
+  stationProgress?: StationProgress
   x: number
   d: number
   t: number
@@ -104,6 +117,7 @@ export type Frame = {
   points: number
   quality: number
   maxSpeed: number
+  lastGateOffset?: number
   lastGateHit: boolean
   lastGateTime: number
   lastSide: number
@@ -115,7 +129,12 @@ export const emptyFrame = (setup: Setup = defaultSetup): Frame => ({
   x: 0,
   d: 0,
   t: 0,
-  speed: isSafety(setup.technique) ? safetyStartSpeed(setup.technique) : 0,
+  ...(setup.station ? { stationProgress: freshProgress() } : {}),
+  speed: setup.station
+    ? 7.5
+    : isSafety(setup.technique)
+      ? safetyStartSpeed(setup.technique)
+      : 0,
   heading: 0,
   forceHeading: 0,
   safety: isSafety(setup.technique) ? initialSafety() : null,
@@ -209,6 +228,8 @@ export function step(
   dt: number,
 ): void {
   if (f.done || dt <= 0) return
+  if (f.stationTape) recordControls(f.stationTape, input)
+  const station = findStation(setup.station)
   const course = courses[setup.course],
     surface = surfaces[setup.surface],
     tech = techniques[setup.technique]
@@ -236,6 +257,7 @@ export function step(
     stepAir(f, setup.technique, course, input, dt)
   ) {
     finishStep(f, gates, course, beforeX, beforeD)
+    if (station) advanceStation(station, f, dt)
     return
   }
   f.tuck = approach(f.tuck, input.tuck && !input.brake ? 1 : 0, 4, dt)
@@ -273,10 +295,12 @@ export function step(
   const effectiveGrip = clamp(surface.grip - rough * 0.17, 0.35, 1)
   f.grip = effectiveGrip
   const offPiste = clamp((Math.abs(f.x) - 21) / 5, 0, 1)
+  const christie = station?.task === 'match' ? christieWedge(f) : 0
   f.slip = clamp(
     (f.pivot ? 0.46 * Math.sin(Math.PI * f.pivot.progress) : 0) +
       (1 - effectiveGrip) * Math.sin(edge) +
       f.brake * 0.7 +
+      christie +
       (wedge
         ? 0.18
         : setup.technique === 'boardSkid'
@@ -322,7 +346,13 @@ export function step(
   )
   const slipSign = Math.sign(f.edge || f.lastSide || 1)
   f.boardYaw = board
-    ? approach(f.boardYaw, slipSign * (f.brake * 0.86 + f.slip * 0.56), 4.4, dt)
+    ? approach(
+        f.boardYaw,
+        slipSign * (f.brake * 0.86 + f.slip * 0.56) +
+          (station?.task === 'twist' ? footTwist(f) * radians * 0.25 : 0),
+        4.4,
+        dt,
+      )
     : 0
   const cutRadius = tech.sidecut * Math.cos(edge)
   const engagement =
@@ -381,6 +411,7 @@ export function step(
     f.focusTime += dt
   if (!trick) f.quality = Math.round((100 * f.focusTime) / f.t)
   finishStep(f, gates, course, beforeX, beforeD)
+  if (station) advanceStation(station, f, dt)
 }
 function finishStep(
   f: Frame,
@@ -400,7 +431,8 @@ function finishStep(
     const crossingX =
       beforeX +
       ((f.x - beforeX) * (gate.d - beforeD)) / Math.max(0.00001, f.d - beforeD)
-    f.lastGateHit = Math.abs(crossingX - gate.x) <= gate.width
+    f.lastGateOffset = crossingX - gate.x
+    f.lastGateHit = Math.abs(f.lastGateOffset) <= gate.width
     f.gatesSeen++
     f.lastGateTime = f.t
     if (f.lastGateHit) {
@@ -456,6 +488,7 @@ export function referenceRun(setup: Setup): Sample[] {
   return samples.slice(-44)
 }
 export function summarize(frame: Frame, setup: Setup) {
+  const station = findStation(setup.station)
   return {
     id: globalThis.crypto?.randomUUID?.() ?? String(Date.now()),
     date: new Date().toISOString(),
@@ -470,7 +503,17 @@ export function summarize(frame: Frame, setup: Setup) {
     quality: isTrick(setup.technique)
       ? Math.round((100 * frame.air.landed) / Math.max(1, frame.air.attempts))
       : frame.quality,
-    finished: frame.safety ? frame.safety.phase === 'checked' : frame.done,
+    finished: station
+      ? goalReached(station, frame.stationProgress)
+      : frame.safety
+        ? frame.safety.phase === 'checked'
+        : frame.done,
+    ...(setup.station && frame.stationTape
+      ? { stationTape: frame.stationTape }
+      : {}),
+    ...(setup.station && frame.stationProgress
+      ? { stationValue: frame.stationProgress.value }
+      : {}),
     ...(frame.safety
       ? {
           safety: {
@@ -516,10 +559,16 @@ export function demonstrationInput(
   f: Frame,
   setup: Setup,
   gates: Gate[],
+  alteration: boolean | number = false,
 ): Input {
   if (isSafety(setup.technique)) return safetyReferenceInput(f, setup.technique)
   const anticipation = 2.6 + f.speed * 0.53
-  const targetD = f.d + anticipation
+  const station = findStation(setup.station)
+  const variation = clamp(Number(alteration), 0, 1)
+  const targetD =
+    f.d +
+    anticipation -
+    (station?.task === 'line' ? variation * (anticipation + 10) : 0)
   const center = lineAt(gates, targetD)
   const gradient = (lineAt(gates, targetD + 1) - lineAt(gates, targetD - 1)) / 2
   const predictedX = f.x + Math.tan(f.heading) * anticipation
@@ -564,7 +613,7 @@ export function demonstrationInput(
     flex =
       relief(lead) > (relief(lead - reach) + relief(lead + reach)) / 2 + 0.015
   }
-  return {
+  const input = {
     steer,
     flex,
     tuck: !wedge && Math.abs(steer) < 0.13,
@@ -573,6 +622,7 @@ export function demonstrationInput(
       ? trickDemoControls(f, setup.technique, steer)
       : {}),
   }
+  return station ? stationInput(station, f, input, variation) : input
 }
 
 export function referenceFrame(setup: Setup): Frame {

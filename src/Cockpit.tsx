@@ -71,7 +71,8 @@ import {
 } from './course.ts'
 import { lineAt, type Frame } from './physics.ts'
 import { lengthText, type Prefs } from './storage.ts'
-import { cancelPop, type TrainingRun } from './useRun.ts'
+import type { TrainingRun } from './useRun.ts'
+import { cancelPop } from './stationTape.ts'
 import { SchemeTabs, SelectField, Toggle } from './UI.tsx'
 
 export function TrailMap({

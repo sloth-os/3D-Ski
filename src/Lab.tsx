@@ -1,3 +1,4 @@
+import { stationsFor, levelSources, type Station } from './levelTwo.ts'
 import { defaultLoad, type LoadSelection } from './loadPath.ts'
 import {
   sportNames,
@@ -47,10 +48,12 @@ export function Lab({
   select,
   practice,
   initialPath,
+  openStation,
   units,
 }: {
   setup: Setup
   id: TechniqueId
+  openStation: (s: Station) => void
   initialPath: boolean
   select: (id: TechniqueId) => void
   practice: (
@@ -78,7 +81,7 @@ export function Lab({
   )
   const t = techniques[id],
     study = useMemo(
-      () => ({ ...setup, technique: id, stopEdge, course }),
+      () => ({ ...setup, station: undefined, technique: id, stopEdge, course }),
       [setup, id, stopEdge, course],
     )
   const f = idealTurn(study, angle, speed),
@@ -139,6 +142,15 @@ export function Lab({
         />
         {actions}
       </div>
+      <button
+        className="level-entry"
+        onClick={() => openStation(stationsFor(sport)[0])}
+      >
+        <GraduationCap size={20} />
+        <strong>{levelSources[sport].publisher} Level II training</strong>
+        <span>{stationsFor(sport).length} stations</span>
+        <ArrowRight size={16} />
+      </button>
       <div className="lab-grid">
         <section className="panel lab-lesson">
           <span className="eyebrow">

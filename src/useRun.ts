@@ -1,3 +1,6 @@
+import { cancelPop } from './stationTape.ts'
+import { findStation } from './levelTwo.ts'
+import { goalReached } from './levelPractice.ts'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { courses, type Setup } from './course.ts'
 import {
@@ -51,6 +54,7 @@ export function useRun(
   const ready = useRef(false),
     audio = useRef(new SkiSound())
   const gates = useMemo(() => buildGates(courses[setup.course]), [setup.course])
+  const station = findStation(setup.station)
   const enabled = useRef(sound)
   enabled.current = sound
   const onRecord = useRef(record)
@@ -67,6 +71,8 @@ export function useRun(
       demoOrigin.current = demo
       lastInput.current = { ...neutralInput }
       current.current = emptyFrame(initial)
+      if (initial.station && !demo)
+        current.current.stationTape = { ticks: 0, changes: [] }
       setFrame({ ...current.current })
       setSamples([sample(current.current, initial)])
       if (enabled.current) audio.current.enable()
@@ -177,6 +183,8 @@ export function useRun(
         )
         pivotRequest.current = false
         checkRequest.current = false
+        if (!study && station && goalReached(station, f.stationProgress))
+          f.done = true
         acc -= 1 / 60
       }
       if (now - lastSample >= 110 || f.done) {
@@ -206,7 +214,7 @@ export function useRun(
       cancelAnimationFrame(id)
       audio.current.update(0, 0, false)
     }
-  }, [phase, setup, gates, end, reference])
+  }, [phase, setup, gates, end, reference, station])
   const singleStep = () => {
     if (state.current !== 'paused') return
     const f = current.current
@@ -221,6 +229,7 @@ export function useRun(
     )
     setFrame({ ...f })
     setSamples((old) => [...old.slice(-43), sample(f, setup)])
+    if (station && goalReached(station, f.stationProgress)) f.done = true
     if (f.done) end()
   }
   return {
@@ -259,8 +268,3 @@ export function useRun(
   }
 }
 export type TrainingRun = ReturnType<typeof useRun>
-
-export function cancelPop(f: Frame) {
-  if (f.air.phase === 'load' && f.air.pushElapsed < 0)
-    f.air = { ...f.air, phase: 'ready', charge: 0 }
-}

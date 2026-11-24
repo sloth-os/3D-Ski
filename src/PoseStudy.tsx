@@ -29,12 +29,14 @@ export function PoseStudy({
   frame,
   trail,
   switched,
+  perspective = 'studio',
 }: {
   view: StudyView
   setup: Setup
   angle: number
   speed: number
   frame?: Frame
+  perspective?: 'studio' | 'chase' | 'aerial'
   switched?: boolean
   trail?: readonly Frame[]
 }) {
@@ -104,7 +106,7 @@ export function PoseStudy({
         () => canvasMountain,
       )
       if (dead) return
-      view = create(host, setup, true, trail)
+      view = create(host, setup, perspective === 'studio', trail)
       function draw(now: number) {
         if (dead) return
         const opt = config.current
@@ -120,12 +122,16 @@ export function PoseStudy({
           // Only alter the dedicated turn experiment. Recorded replay frames are shared with scoring.
           if (!opt.frame && opt.lens === 'path') f.tuck = opt.tuck / 100
           const projection = view!.draw(f, {
-            camera: opt.closeUp ? 'edge' : 'side',
+            camera: opt.closeUp
+              ? 'edge'
+              : perspective === 'studio'
+                ? 'side'
+                : perspective,
             lens: opt.lens,
             muscle: opt.focus,
             load: opt.load,
             forces: true,
-            line: false,
+            line: perspective !== 'studio',
             orbit: orbit.current,
             tilt: 0.045,
             zoom: opt.closeUp
@@ -221,7 +227,7 @@ export function PoseStudy({
       cancelAnimationFrame(raf)
       view?.dispose()
     }
-  }, [setup, trail])
+  }, [setup, trail, perspective])
   const grip = gripFor(setup.technique, frame?.air.switch ?? false)
   const safetyMark = frame?.safety
     ? isFall(setup.technique)
@@ -243,15 +249,17 @@ export function PoseStudy({
           ref={mount}
           role="img"
           aria-label={
-            frame
-              ? (isSafety(setup.technique)
-                  ? '3D movement study of ' +
-                    safetyLessons[setup.technique].name +
-                    '.'
-                  : board
-                    ? '3D snowboard trick replay.'
-                    : '3D ski trick replay.') + ' Drag to orbit the rider.'
-              : 'Interactive 3D rider showing the selected edge angle and body position. Drag to orbit.'
+            setup.station
+              ? '3D Level II movement replay. Drag to orbit the rider.'
+              : frame
+                ? (isSafety(setup.technique)
+                    ? '3D movement study of ' +
+                      safetyLessons[setup.technique].name +
+                      '.'
+                    : board
+                      ? '3D snowboard trick replay.'
+                      : '3D ski trick replay.') + ' Drag to orbit the rider.'
+                : 'Interactive 3D rider showing the selected edge angle and body position. Drag to orbit.'
           }
           onPointerDown={(e) => {
             e.currentTarget.setPointerCapture(e.pointerId)

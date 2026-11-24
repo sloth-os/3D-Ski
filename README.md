@@ -2,6 +2,26 @@
 
 Fallline is a full-screen ski and snowboard game for the browser. Choose **Skiing** or **Snowboarding**, then use the lesson picker for turns, tricks, switch riding, stopping, or falls. Drag to orbit the 3D rider, scrub an example, or take control on the mountain. The production app runs offline after its first successful visit. [Play Fallline](https://sloth-os.github.io/3D-Ski/) · [Skiing](https://sloth-os.github.io/3D-Ski/#skiing) · [Snowboarding](https://sloth-os.github.io/3D-Ski/#snowboarding)
 
+## PSIA-AASI Level II practice
+
+Open either sport and choose **Level II training**. Each station pairs a physics-driven movement study with a playable assignment and an intermediate-lesson coaching decision. The alpine stations draw on the national integrated, individual and versatility activities. The snowboard stations draw on core and supporting activities. [Enter the alpine stations](https://sloth-os.github.io/3D-Ski/#skiing/level-ii) · [Enter the snowboard stations](https://sloth-os.github.io/3D-Ski/#snowboarding/level-ii)
+
+| Alpine skiing · 10 stations | Snowboarding · 12 stations |
+| --- | --- |
+| Gliding wedge, wedge to parallel, basic parallel | Brushed turns, carved turns, switch turns |
+| Railroad tracks, outside-ski pressure transfer | Bumps, switch bumps, switch carved arcs |
+| Short-turn rhythm, short–medium–short, narrowing funnel | Lead-foot release and board twist, funnel turns |
+| Lane changes on a sidehill, short turns in bumps | Air 180, tail-press preparation, Indy grab, shifty |
+
+Select **Reference** and **Altered run** at the same frame. Orbit the rider, move the camera onto the hill, inspect the snow tracks, or freeze a turn phase, crest, takeoff or landing. **Apply coaching cue** changes the simulated input and reruns the same movement. Compare how the duration, intensity, rate or timing changes the body, equipment and track. The wedge-christie model opens the skis at initiation and matches them as flex and edge engagement increase. The lead-foot release shows an illustrative difference in local tilt between the bindings. Course forces and joint positions are estimates.
+
+**Play station** starts a rolling entry with the station’s equipment, snow and terrain. The HUD shows a movement target such as three complete crest-to-trough cycles or one aligned switch landing. Reaching the target opens the debrief. Ending early also saves progress and the first 30 seconds of controls. **Replay my station** reconstructs that attempt from the same starting conditions as the reference. The debrief compares a station-specific measurement at a shared instant. Each station tracks analysis, teaching and riding separately on this device. Completing all three earns station credit, including offline.
+
+The coaching cases cover active listening, inclusion, feedback, equipment questions, terrain choice, progressive lesson planning, risk management and student reflection. The current national standards put Level 2 technical skills on beginner, intermediate and some advanced terrain, with small freestyle features for snowboarding. The movement-analysis and teaching work focuses on learners through the intermediate zone. The simulator adapts selected activities. The outside-ski station prepares for a stork turn with both skis down, and the tail press uses flat snow in preparation for box work. PSIA-AASI conducts the on-snow certification assessment.
+
+- The September 2026 certification standards cover professionalism on p. 7, people skills on p. 10, teaching on p. 14 and technical fundamentals and Level 2 performance on pp. 16 and 18. [PSIA alpine standards](https://thesnowpros.org/wp-content/uploads/2025/11/PSIA_Alpine_Standards100225v5.pdf#page=18) · [AASI snowboard standards](https://thesnowpros.org/wp-content/uploads/2025/10/AASI_Snowboard_Standards0224_updated_100325_v3.pdf#page=18)
+- The national activity lists identify the intended equipment performance, terrain and movement for each discipline. Every station links to its source page. [Alpine Level 2 activities, p. 23 onward](https://thesnowpros.org/wp-content/uploads/2026/10/PSIA-AASI_National_Alpine_Activities_List_v1.2a.pdf#page=23) · [Snowboard Level 2 activities, p. 23 onward](https://thesnowpros.org/wp-content/uploads/2026/10/PSIA-AASI_National_Snowboard_Activities_List_v1.0_10_26.pdf#page=23)
+
 ## Playing
 
 Open **Run setup** to choose terrain, equipment, technique, and snow. **Start run** gives you control. **Watch demo** follows a reference rider through the same course. Each cleared gate earns 100 points and linking opposite turns earns 25. The trail map shows your progress. Your latest 200 practice runs are stored on this device with gate scores, linked turns, time, peak speed, and exercise-specific edge control.

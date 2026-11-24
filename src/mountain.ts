@@ -40,9 +40,13 @@ export type MountainView = {
   dispose(): void
 }
 
-function makeTracks(scene: THREE.Scene, course: Course, board: boolean) {
-  const length = 610,
-    count = board ? 1 : 2
+function makeTracks(
+  scene: THREE.Scene,
+  course: Course,
+  board: boolean,
+  length = 610,
+) {
+  const count = board ? 1 : 2
   const tracks = Array.from({ length: count }, () => {
     const buffer = new Float32Array(length * 6),
       indices: number[] = []
@@ -191,7 +195,9 @@ export function createMountain(
     : addTerrain(scene, c, setup, gates)
   if (replay) {
     const path = replay
-      .filter((s) => s.air.phase === 'flight')
+      .filter((s, i) =>
+        setup.station ? i % 3 === 0 : s.air.phase === 'flight',
+      )
       .map((s) => pointAt(c, s.x, s.d, s.air.height + 0.045))
     const line = new THREE.Line(
       new THREE.BufferGeometry().setFromPoints(path),
@@ -268,8 +274,15 @@ export function createMountain(
   const muscles = makeMuscles(skier.root)
   const spray = makeSpray(setup.surface, board)
   scene.add(spray.points)
-  const tracks = makeTracks(scene, c, board),
+  const snowPrints = setup.station ? replay : undefined
+  const tracks = makeTracks(
+      scene,
+      c,
+      board,
+      snowPrints ? Math.max(2, snowPrints.length) : 610,
+    ),
     lens = makeLens(scene)
+  snowPrints?.forEach((frame) => tracks(frame, true))
   const pos = new THREE.Vector3(),
     eye = new THREE.Vector3(),
     target = new THREE.Vector3(),
@@ -388,7 +401,7 @@ export function createMountain(
           .fromArray(muscleCenter(pair[1]))
           .applyMatrix4(skier.root.matrixWorld)
       }
-      tracks(f, !study && !plate)
+      if (!snowPrints) tracks(f, !study && !plate)
       if (!study) spray.update(f, pos, pitch)
       sun.position.copy(pos).add(sunOffset)
       sun.target.position.copy(pos)

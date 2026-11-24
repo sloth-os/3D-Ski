@@ -1,3 +1,14 @@
+import type { StudyView } from './PoseStudy.tsx'
+import { LevelClinic, StationHUD } from './LevelClinic.tsx'
+import {
+  findStation,
+  goals,
+  stationFromHash,
+  stationPath,
+  stationSetup,
+  type Station,
+} from './levelTwo.ts'
+import { markCredit } from './levelJournal.ts'
 import { defaultLoad, type LoadSelection } from './loadPath.ts'
 import { courseStages, stageAt } from './terrainGuide.ts'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
@@ -100,8 +111,13 @@ export default function App() {
     ),
     [review, setReview] = useState<Run | null>(null),
     log = useRef(runs)
+  const [clinic, setClinic] = useState(() => stationFromHash(location.hash))
+  const [attempt, setAttempt] = useState<Run>()
   const [labId, setLabId] = useState<TechniqueId>(
-      () => resolveLesson(location.hash, setup.technique) ?? setup.technique,
+      () =>
+        stationFromHash(location.hash)?.technique ??
+        resolveLesson(location.hash, setup.technique) ??
+        setup.technique,
     ),
     [linkedPath, setLinkedPath] = useState(
       () => location.hash === lessonPath(labId, true),
@@ -121,6 +137,9 @@ export default function App() {
     world = useRef<HTMLElement>(null),
     offline = useOffline()
   const record = useCallback((r: Run) => {
+    const station = findStation(r.setup.station)
+    if (station && (r.stationValue ?? 0) >= goals[station.task][0])
+      markCredit(station, 'run')
     const next = [r, ...log.current].slice(0, 200)
     log.current = next
     setRuns(next)
@@ -136,11 +155,14 @@ export default function App() {
     c = courses[setup.course],
     preview = run.phase === 'preview',
     paused = run.phase === 'paused'
+  const activeStation = findStation(setup.station)
   const stages = useMemo(() => courseStages(c), [c]),
     stage = isSafety(setup.technique)
       ? undefined
       : stageAt(stages, preview ? 0 : f.d)
   function close() {
+    setClinic(undefined)
+    setAttempt(undefined)
     setLinkedPath(false)
     setLinkedCourse(null)
     setDialog(null)
@@ -150,6 +172,8 @@ export default function App() {
     world.current?.focus({ preventScroll: true })
   }
   function openLesson(id: TechniqueId) {
+    setClinic(undefined)
+    setAttempt(undefined)
     run.pause()
     const path = dialog === 'lab' && linkedPath
     setLinkedPath(path)
@@ -161,6 +185,29 @@ export default function App() {
       '',
       location.pathname + location.search + lessonPath(id, path),
     )
+  }
+  function openStation(station: Station, recording?: Run) {
+    run.pause()
+    setAttempt(recording)
+    setClinic(station)
+    setLabId(station.technique)
+    setLinkedPath(false)
+    setLinkedCourse(null)
+    setReview(null)
+    setDialog('lab')
+    history.replaceState(
+      null,
+      '',
+      location.pathname + location.search + stationPath(station),
+    )
+  }
+  function rideStation(station: Station, view: StudyView) {
+    const chosen = stationSetup(station)
+    changeLens(view.lens)
+    setLoad(view.load)
+    setMuscle(view.focus)
+    configure(chosen)
+    start(false, chosen)
   }
   function open(which: Dialog) {
     setLinkedCourse(null)
@@ -201,7 +248,13 @@ export default function App() {
     setLoad(selection)
     changeLens(studyLens)
     setMuscle(focus)
-    const chosen = { ...setup, technique: id, stopEdge, course }
+    const chosen = {
+      ...setup,
+      station: undefined,
+      technique: id,
+      stopEdge,
+      course,
+    }
     configure(chosen)
     start(demo, chosen)
   }
@@ -233,8 +286,12 @@ export default function App() {
   useEffect(() => {
     const hash = () => {
         run.pause()
+        const station = stationFromHash(location.hash)
+        setClinic(station)
+        setAttempt(undefined)
         setLinkedCourse(courseFromHash(location.hash))
-        const id = resolveLesson(location.hash, setup.technique)
+        const id =
+          station?.technique ?? resolveLesson(location.hash, setup.technique)
         setDialog(fromHash(setup.technique))
         const path = !!id && location.hash === lessonPath(id, true)
         setLinkedPath(path)
@@ -243,7 +300,9 @@ export default function App() {
           history.replaceState(
             null,
             '',
-            location.pathname + location.search + lessonPath(id, path),
+            location.pathname +
+              location.search +
+              (station ? stationPath(station) : lessonPath(id, path)),
           )
         }
         setReview(null)
@@ -255,7 +314,15 @@ export default function App() {
         setRuns(log.current)
       }
     }
-    const initial = resolveLesson(location.hash, setup.technique)
+    const initialStation = stationFromHash(location.hash)
+    if (initialStation && location.hash !== stationPath(initialStation))
+      history.replaceState(
+        null,
+        '',
+        location.pathname + location.search + stationPath(initialStation),
+      )
+    const initial =
+      !initialStation && resolveLesson(location.hash, setup.technique)
     if (
       initial &&
       location.hash !== lessonPath(initial) &&
@@ -577,7 +644,9 @@ export default function App() {
         units={prefs.units}
         details={() => open('analysis')}
       />
-      {isSafety(setup.technique) ? (
+      {activeStation ? (
+        <StationHUD s={activeStation} f={f} preview={preview} />
+      ) : isSafety(setup.technique) ? (
         <SafetyHUD
           frame={f}
           setup={setup}
@@ -664,7 +733,7 @@ export default function App() {
             key={linkedCourse ?? 'current'}
             setup={linkedCourse ? { ...setup, course: linkedCourse } : setup}
             prefs={prefs}
-            apply={configure}
+            apply={(s) => configure({ ...s, station: undefined })}
             toggle={() => setPrefs((p) => ({ ...p, line: !p.line }))}
             inRun={!preview && !run.automated}
           />
@@ -702,15 +771,29 @@ export default function App() {
           wide
           onClose={close}
         >
-          <Lab
-            key={linkedPath ? 'load-path' : 'study'}
-            initialPath={linkedPath}
-            setup={setup}
-            id={labId}
-            select={openLesson}
-            practice={practice}
-            units={prefs.units}
-          />
+          {clinic ? (
+            <LevelClinic
+              key={clinic.id + (attempt?.id ?? '')}
+              station={clinic}
+              select={openStation}
+              lessons={() => openLesson(labId)}
+              practice={rideStation}
+              runs={runs}
+              attempt={attempt}
+              units={prefs.units}
+            />
+          ) : (
+            <Lab
+              openStation={openStation}
+              key={linkedPath ? 'load-path' : 'study'}
+              initialPath={linkedPath}
+              setup={setup}
+              id={labId}
+              select={openLesson}
+              practice={practice}
+              units={prefs.units}
+            />
+          )}
         </Modal>
       )}
       {dialog === 'run-log' && !review && (
@@ -730,6 +813,8 @@ export default function App() {
         >
           <RunDetails
             record={review}
+            clinic={findStation(review.setup.station)}
+            replay={(s) => openStation(s, review)}
             units={prefs.units}
             again={() => {
               configure(review.setup)

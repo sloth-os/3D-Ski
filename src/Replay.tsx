@@ -2,10 +2,14 @@ import { useEffect, useRef, useState } from 'react'
 import { Pause, Play, Rewind } from 'lucide-react'
 import type { Frame } from './physics.ts'
 
-export function useReplay(frames: readonly Frame[], initial: number) {
+export function useReplay(
+  frames: readonly Frame[],
+  initial: number,
+  startAtDisplayed = false,
+) {
   const [index, setIndex] = useState(initial),
     [playing, setPlaying] = useState(false)
-  const cursor = useRef(0)
+  const cursor = useRef(startAtDisplayed ? initial : 0)
   function seek(next: number) {
     setPlaying(false)
     cursor.current = next

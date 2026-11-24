@@ -1,3 +1,4 @@
+import { findStation, stationFits } from './levelTwo.ts'
 import { safetyLessons, isSafety } from './safety.ts'
 import { freestyleGuide, isBoardTrick, tricks } from './tricks.ts'
 
@@ -428,6 +429,7 @@ export type Setup = {
   technique: TechniqueId
   surface: SurfaceId
   stance?: 'forward' | 'switch'
+  station?: string
   stopEdge?: 'heel' | 'toe'
 }
 export const startsSwitch = (setup: Setup) =>
@@ -480,10 +482,12 @@ export const references = [
 export function isSetup(value: unknown): value is Setup {
   if (!value || typeof value !== 'object') return false
   const s = value as Setup
+  const station = findStation(s.station)
   return (
     Object.hasOwn(courses, s.course) &&
     Object.hasOwn(techniques, s.technique) &&
     Object.hasOwn(surfaces, s.surface) &&
+    (s.station === undefined || (!!station && stationFits(station, s))) &&
     (s.stopEdge === undefined ||
       s.stopEdge === 'heel' ||
       s.stopEdge === 'toe') &&

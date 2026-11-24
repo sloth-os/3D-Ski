@@ -1,3 +1,7 @@
+import { useMemo } from 'react'
+import { attemptReplay } from './levelReplay.ts'
+import { findStation, goals, type Station } from './levelTwo.ts'
+import { progressText } from './levelPractice.ts'
 import { isFall, safetyPhases } from './safety.ts'
 import {
   ArrowRight,
@@ -160,15 +164,26 @@ export function TelemetryHelp({ board }: { board: boolean }) {
 }
 export function RunDetails({
   record,
+  clinic,
+  replay,
   units,
   again,
   close,
 }: {
   record: Run
+  clinic?: Station
+  replay: (s: Station) => void
   units: Prefs['units']
   again: () => void
   close: () => void
 }) {
+  const comparison = useMemo(
+    () =>
+      clinic && record.stationTape?.ticks
+        ? attemptReplay(clinic, record.stationTape).evidence
+        : null,
+    [clinic, record],
+  )
   const c = courses[record.setup.course],
     metric = units === 'metric'
   return (
@@ -179,15 +194,19 @@ export function RunDetails({
         </span>
         <div>
           <span className="eyebrow">
-            {record.safety
-              ? record.finished
-                ? 'Drill complete'
-                : 'Drill review'
-              : record.finished
-                ? 'Course complete'
-                : 'Practice session'}
+            {clinic
+              ? (record.stationValue ?? 0) >= goals[clinic.task][0]
+                ? 'Station goal reached'
+                : 'Station review'
+              : record.safety
+                ? record.finished
+                  ? 'Drill complete'
+                  : 'Drill review'
+                : record.finished
+                  ? 'Course complete'
+                  : 'Practice session'}
           </span>
-          <h3>{c.name}</h3>
+          <h3>{clinic?.name ?? c.name}</h3>
           <p>
             {equipmentName[equipmentFor(record.setup.technique)]} ·{' '}
             {techniques[record.setup.technique].name} ·{' '}
@@ -201,6 +220,15 @@ export function RunDetails({
           </strong>
         )}
       </div>
+      {clinic && (
+        <div className="station-result">
+          <Flag size={18} />
+          <div>
+            <strong>{progressText(clinic, record.stationValue ?? 0)}</strong>
+            <p>{comparison ?? clinic.aim}</p>
+          </div>
+        </div>
+      )}
       <div className="result-grid">
         {(record.safety
           ? [
@@ -297,18 +325,30 @@ export function RunDetails({
         <div>
           <h3>Next run</h3>
           <p>
-            {record.safety ||
-            record.freestyle ||
-            isSwitchDrill(record.setup.technique)
-              ? techniques[record.setup.technique].watch
-              : record.gates === c.gates
-                ? 'You cleared every gate. Repeat on a different snow surface and compare your turn shape.'
-                : record.turns < 2
-                  ? 'Build a left turn, release, then roll onto the right edges. Try linking two turns before adding speed.'
-                  : techniques[record.setup.technique].watch}
+            {clinic
+              ? clinic.cue
+              : record.safety ||
+                  record.freestyle ||
+                  isSwitchDrill(record.setup.technique)
+                ? techniques[record.setup.technique].watch
+                : record.gates === c.gates
+                  ? 'You cleared every gate. Repeat on a different snow surface and compare your turn shape.'
+                  : record.turns < 2
+                    ? 'Build a left turn, release, then roll onto the right edges. Try linking two turns before adding speed.'
+                    : techniques[record.setup.technique].watch}
           </p>
         </div>
       </div>
+      {clinic && (
+        <button
+          className="outline-btn station-replay-button"
+          onClick={() => replay(clinic)}
+        >
+          {record.stationTape?.ticks
+            ? 'Replay my station'
+            : 'Open station study'}
+        </button>
+      )}
       <div className="modal-actions">
         <button className="outline-btn" onClick={close}>
           Close
@@ -386,7 +426,10 @@ export function Log({
                 <MountainSnow />
               </span>
               <span className="log-title">
-                <b>{courses[r.setup.course].name}</b>
+                <b>
+                  {findStation(r.setup.station)?.name ??
+                    courses[r.setup.course].name}
+                </b>
                 <small>
                   {techniques[r.setup.technique].name} ·{' '}
                   {new Date(r.date).toLocaleDateString(undefined, {
